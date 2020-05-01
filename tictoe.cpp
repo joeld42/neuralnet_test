@@ -1,3 +1,6 @@
+#include <assert.h>
+#include <math.h>
+
 #include <raylib.h>
 
 #define RAYGUI_IMPLEMENTATION
@@ -12,7 +15,10 @@
 
 enum {
 	MODE_PLAY,
-	MODE_GALLERY
+	MODE_GALLERY,
+	MODE_TREE,
+
+	NUM_MODES
 };
 
 enum {
@@ -64,6 +70,22 @@ Color LerpColor( Color a, Color b, float t)
 	return result;
 }
 
+struct MCTSNode
+{
+	GameState state;
+	int parentNdx;
+
+	int childNdx[9]; // Note 0 means no child because root is 0
+	
+	float totalWins;
+	float totalVisits;
+	int moveNum; // move that got us here
+
+	// for dbg draw
+	int level;
+	int xval;
+};
+
 struct GameAppInfo 
 {
 	int mode = MODE_PLAY;
@@ -84,8 +106,14 @@ struct GameAppInfo
     int winOcount;
     int tieCount;
 
+    MCTSNode *nodes;
+    int numNodes;
+
     GameAnalysis preview[9]; // preview for all squares
 };
+
+
+#define NUM_MCTS_NODE (2000)
 
 
 float min_float( float a, float b )
@@ -152,7 +180,6 @@ GameState CheckWinner( GameState game )
 	}
 
 	return result;
-
 }
 
 void LoadWeights( GameState &state, double *inputs )
@@ -443,7 +470,7 @@ void ResetGame( GameAppInfo &app )
 	app.gameHistory[0].to_move = SQUARE_X; // TODO: random
 }
 
-int ChooseRandomMove( GameAppInfo &app, const GameState &game )
+int ChooseRandomMove( const GameState &game )
 {
 	int possibleMoves[9];
 	int numPossibleMoves = 0;
@@ -484,24 +511,6 @@ int PreviewBestMove( GameAppInfo &app, const GameState &game )
 
 			app.preview[i] = ga;
 			
-			/*
-			float my_win, other_win;
-			if (game.to_move == SQUARE_X) {
-				my_win = ga.x_win_chance;
-				other_win = ga.o_win_chance;
-			}
-			else if (game.to_move == SQUARE_O) {
-				my_win = ga.o_win_chance;
-				other_win = ga.x_win_chance;
-			}
-
-			float moveDiff = my_win - other_win;
-			if (moveDiff > bestMoveDiff) {				
-				bestMoveDiff = moveDiff;					
-				bestMove = i;
-			}
-			*/
-
 		} else {
 			app.preview[i] = (GameAnalysis){};
 		}
@@ -510,6 +519,218 @@ int PreviewBestMove( GameAppInfo &app, const GameState &game )
 	return bestMove;
 }
 
+// This assumes all the nodes get zeroed out
+int MakeNode( GameAppInfo &app )
+{
+	return app.numNodes++;
+}
+
+float NodeValUCB1( GameAppInfo &app, MCTSNode &node )
+{
+	if (node.totalVisits == 0) {
+		// Node hasn't been explored at all yet, UCB value is
+		// infinite. Don't return MAX_FLOAT because we might
+		// add the wins to this
+		return 9999999.0f;
+	} 
+
+	float exploitVal = node.totalWins / node.totalVisits;
+	float exploreVal = 2.0f * sqrt( log( app.nodes[node.parentNdx].totalVisits ) / (float)node.totalVisits );
+	return exploitVal + exploreVal;
+}
+
+int RolloutOnce( GameState state, int player )
+{
+	GameState curr = state;
+	while (!curr.winner) {
+		int randMove = ChooseRandomMove( curr );
+		curr = ApplyMove( curr, randMove );
+	}
+
+	if (curr.winner == player) {
+		return 1;
+	} else if (curr.winner == TIE_GAME) {
+		return 0;
+	} else {
+		return -1;
+	}
+}
+
+int Rollout( GameState state, int runs, int player )
+{		
+	if (state.winner == player) {
+		// If this is a winning move for player, count it as all wins
+		//printf("Rollout: winning move\n");
+		return runs;
+	} else if (state.winner == TIE_GAME) {
+		return 0;
+	} else if (state.winner != IN_PROGRESS) {
+		// other player won
+		return -runs;
+	} 
+	// Otherwise
+	int wins = 0;
+	for (int i=0; i < runs; i++) {
+		wins += RolloutOnce( state, player );
+	}
+	//printf("Rollout: %d/%d wins\n", wins, runs );
+	return wins;
+}
+
+void DbgPrintTree( GameAppInfo &app, int currNdx, int depth )
+{
+	for (int i=0; i < depth; i++) {
+		printf(" ");
+	}
+
+	MCTSNode &node = app.nodes[currNdx];
+	//printf("")
+
+	printf("\n");
+}
+
+int TreeSearchMove( GameAppInfo &app, const GameState &game )
+{
+	if (game.winner) {
+		return -1;
+	}
+
+	// initiaze the search
+	memset( app.nodes, 0, sizeof(MCTSNode) * NUM_MCTS_NODE );
+	app.numNodes = 0;
+
+	int to_play = game.to_move;
+
+	// start with the current state
+	int rootNdx = MakeNode( app );
+	app.nodes[rootNdx].state = game;
+
+	int iter = 1000; 
+	while ((app.numNodes < NUM_MCTS_NODE-2) && (iter>0))
+	{
+		//printf("\nTree search %d iters left, %d nodes....\n", iter, app.numNodes);
+		iter--;
+
+		// Selection -- walk down the tree until we find the best node to explore
+		int currNdx = rootNdx;
+		bool isLeaf = false;
+		int depth = 0;
+		while (!isLeaf) {
+			MCTSNode &curr = app.nodes[ currNdx ];
+
+			if (curr.state.winner == IN_PROGRESS)
+			{
+				// find the child with the best UCB 
+				isLeaf = true;
+				float bestScore = -999999.0f;
+				int bestChildNdx = 0;
+				for (int i=0; i < 9; i++) {
+					if (curr.childNdx[i] != 0) {
+						// This is a non-leaf node, potentially expand
+						isLeaf = false;
+						int childNdx = curr.childNdx[i];
+						float ucb = NodeValUCB1( app, app.nodes[ childNdx ] );
+						if (ucb > bestScore) {
+							bestScore = ucb;
+							bestChildNdx = childNdx;
+						}
+					}
+				}
+
+				if (!isLeaf) {
+					currNdx = bestChildNdx;
+					depth++;
+				}
+			} else {
+				isLeaf = true;
+			}
+		}
+
+		
+
+		// If this leaf has already been evaluated, expand it
+		int simNdx = 0;
+		if ((app.nodes[ currNdx ].totalVisits > 0) && (app.nodes[ currNdx ].state.winner == IN_PROGRESS))
+		{
+			// Expand the possible moves from best child
+			MCTSNode &curr = app.nodes[currNdx];
+
+			if (curr.state.winner != IN_PROGRESS) {
+				printf("Hmmm.. trying to expand a terminal\n");
+			}
+
+			int cc = 0;
+			int pickMoves[9];
+			for (int i=0; i < 9; i++) {
+
+				// Is this a potential move that we haven't expanded yet?
+				if (curr.state.square[i]==SQUARE_BLANK) {
+					GameState nextMove = ApplyMove( curr.state, i );
+					
+					// Make a child node for it
+					int cndx = MakeNode( app );
+					MCTSNode &child = app.nodes[cndx];
+					curr.childNdx[i] = cndx;
+					child.state = nextMove;
+					child.parentNdx = currNdx;
+					child.moveNum = i;
+					pickMoves[cc++] = cndx;
+				}
+			}
+			
+			// shouldn't be exanding
+			assert( cc > 0 );
+
+			// Simulateion step
+			if (cc>0)
+			{
+				// Now simulate one of the newly added nodes
+				int pick = GetRandomValue( 0, cc-1 );
+				simNdx = curr.childNdx[pick];
+			} else {
+				// Use the current node?? I guess??
+				simNdx = currNdx;
+				printf("BAD??? Will sim current I guess\n");
+			}
+		} else {
+			simNdx = currNdx;
+		}
+		
+		// Rollout, sim the node		
+		MCTSNode &sim = app.nodes[ simNdx ];
+		int wins = Rollout( sim.state, 25, to_play );
+
+		// propogate the results back up to the root
+		while (1)
+		{
+			MCTSNode &propNode = app.nodes[ simNdx ];
+			propNode.totalWins += wins;
+			propNode.totalVisits += 1.0f;
+			if (simNdx==0) break;
+
+			simNdx = propNode.parentNdx;
+		}
+	}
+
+	// choose the best average child move
+	float bestMoveVal = -1.0f;
+	int bestMoveNum = -1;
+	MCTSNode &root = app.nodes[rootNdx];
+	for (int i=0; i < 9; i++) {
+		if (root.childNdx[i] > 0) {
+			MCTSNode &child = app.nodes[root.childNdx[i]];
+			if (child.totalVisits > 0) {
+				float val = child.totalWins / child.totalVisits;
+				if (val > bestMoveVal) {
+					bestMoveVal = val;
+					bestMoveNum = child.moveNum;
+				}
+			} 
+		}
+	}
+	printf("iter %d Total Nodes %d Best Move num; %d\n", iter, app.numNodes, bestMoveNum );
+	return bestMoveNum;
+}
 
 
 int ChooseBestMove( GameAppInfo &app, const GameState &game )
@@ -590,7 +811,7 @@ void TrainOneStep( GameAppInfo &app, float temperature )
 		if ((app.currMove==0)||(UniformRandom() > temperature)) {
 			aiMove = ChooseBestMove( app, app.gameHistory[app.currMove] );
 		} else {
-			aiMove = ChooseRandomMove( app, app.gameHistory[app.currMove] );
+			aiMove = ChooseRandomMove(  app.gameHistory[app.currMove] );
 		}
 		if (aiMove >= 0 ) {
 			int nextMove = app.currMove+1;
@@ -623,6 +844,9 @@ int main()
     app.inputs = (double*)malloc( sizeof(double) * 11 );
     app.outputs = (double*)malloc( sizeof(double) * 3 );
 
+    app.nodes = (MCTSNode*)malloc(sizeof(MCTSNode) * NUM_MCTS_NODE );
+    app.numNodes = 0;
+
     genann_randomize( app.net );
 
 	ResetGame( app );    
@@ -643,9 +867,9 @@ int main()
 		ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)));
 
 		if (IsKeyPressed( KEY_TAB )) {
-			if (app.mode== MODE_PLAY) {
-				app.mode = MODE_GALLERY;
-			} else {
+
+			app.mode++;
+			if (app.mode == NUM_MODES) {
 				app.mode = MODE_PLAY;
 			}
 		}
@@ -677,6 +901,20 @@ int main()
 				}
 			}
 
+			if (IsKeyPressed(KEY_S)) {
+				// Tree search
+				printf("Tree search....\n");
+				int aiMove = TreeSearchMove( app, app.gameHistory[app.currMove] );
+				if (aiMove < 0) {
+					printf("No valid moves.\n");
+				} else {
+					printf("AI move on square %d\n", aiMove );
+					int nextMove = app.currMove+1;
+					app.gameHistory[nextMove] = ApplyMove( app.gameHistory[app.currMove], aiMove );
+					app.currMove = nextMove;
+				}
+			}
+
 			if (IsKeyPressed(KEY_T)) {
 				if (!app.gameHistory[app.currMove].winner) {
 					printf("Can't train, game is not finished.\n");
@@ -704,6 +942,9 @@ int main()
 
 			if (IsKeyPressed(KEY_B)) {
 				autoTrain = 100000;
+			}
+
+			if (IsKeyPressed(KEY_T)) {
 			}
 
 			if (IsKeyPressed(KEY_P)) {
@@ -838,6 +1079,63 @@ int main()
 						NULL, false );
 				}
 			}
+		
+		} else if (app.mode==MODE_TREE) {
+
+			for (int ndx=0; ndx < app.numNodes; ndx++) {
+				MCTSNode &curr = app.nodes[ndx];
+				
+				if (ndx != 0) {
+					curr.level = app.nodes[curr.parentNdx].level + 1;					
+				}			
+			}
+
+			for (int level=0; level < 5; level++) {
+				float xval = 10.0f;
+
+				for (int ndx=0; ndx < app.numNodes; ndx++) {
+					MCTSNode &curr = app.nodes[ndx];
+					if (curr.level != level) continue;
+
+					Rectangle rect;
+					rect.x = xval;
+					rect.y = 10 + 55 * level;
+					rect.width = 50;
+					rect.height = 50;
+
+					float ucb = NodeValUCB1( app, curr );
+
+					curr.xval = rect.x + (rect.width/2.0f);
+					if (level >0) {
+						float lasty = 10 + 50 * (level-1);
+						MCTSNode &parent = app.nodes[curr.parentNdx];
+						DrawLineEx( (Vector2){ (float)curr.xval, rect.y + rect.height/2 },
+									(Vector2){ (float)parent.xval, lasty + rect.height/2 },
+									2, GRAY );
+					}
+
+
+					DrawRectangleRec( rect, ORANGE );
+
+					Rectangle boardRect = rect;
+					boardRect.y += 15;
+					boardRect.height -= 15;
+					DrawBoard( boardRect, curr.state, 0.5f, 0.5f, 0.0f, NULL, false );
+					if (ucb > 9999.0) {
+							
+						DrawText( "INF",rect.x + 2, rect.y+2, 12, BLACK );
+					} else {										
+						DrawText( TextFormat("%3.1f", ucb ),				
+							rect.x+2, rect.y+2, 12, BLACK );
+					}
+					
+
+					xval += rect.width + 5;
+					if (xval > 500) break;
+				}
+			}
+
+
 		}
  
         EndDrawing();
