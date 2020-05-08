@@ -34,6 +34,23 @@ set ( LIBS ${LIBS}
 set ( CMAKE_CXX_FLAGS -Wno-nullability-completeness )
 set ( CMAKE_CXX_STANDARD 14)
 
+# =========================================================
+# reorganized stuff
+# =========================================================
+add_executable (tk_game_tictoe 
+				tk_game_tictoe.cpp
+				tk_evalgame.cpp
+				genann.cpp
+				)
+
+target_compile_options( tk_game_tictoe PUBLIC -fno-rtti)
+target_link_libraries( tk_game_tictoe ${LIBS} )
+set_target_properties( tk_game_tictoe PROPERTIES 
+	 					RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/ )
+
+# =========================================================
+# Original test game
+# =========================================================
 add_executable (tictoe 
 				tictoe.cpp
 				genann.cpp
