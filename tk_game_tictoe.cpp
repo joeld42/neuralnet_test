@@ -46,17 +46,20 @@ float min_float( float a, float b )
 }
 
 
-Color GetWinColor( int winner, float x_win_chance, float o_win_chance, float tie_chance )
+Color GetWinColor( int result, int winner, float x_win_chance, float o_win_chance, float tie_chance )
 {
 	Color win_c = WHITE;
 	Color winCol_O = (Color){ 200,200,255,255 };
 	Color winCol_X = (Color){ 255,200,200,255 };
 	Color tieCol = (Color){ 200,255,200,255 };
 
-	if (winner == WINNER_O) {
-		win_c = winCol_O;
-	} else if (winner == WINNER_X) {
-		win_c = winCol_X;
+	if (result == RESULT_WINNER)
+	{
+		if (winner == WINNER_O) {
+			win_c = winCol_O;
+		} else if (winner == WINNER_X) {
+			win_c = winCol_X;
+		}
 	} else {
 		// no winner yet, color by chance of winner
 
@@ -97,7 +100,7 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 	rect.width = sz;
 	rect.height = sz;
 
-	Color win_c = GetWinColor( state.winner, x_win_chance, o_win_chance, tie_chance );
+	Color win_c = GetWinColor( state.gameResult, state.winner, x_win_chance, o_win_chance, tie_chance );
 	//Color win_c = { (uint8_t)(x_win_chance*255), 255, (uint8_t)(o_win_chance*255), 255 };	
 
 	DrawRectangle( rect.x, rect.y, rect.width, rect.height, win_c );
@@ -120,7 +123,8 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 				if (showPreview) {
 					GameAnalysis &ga = app->preview[sqNdx];
 					if ((ga.x_win_chance > 0.0) || (ga.o_win_chance > 0.0)) {
-						Color sqCol = GetWinColor( state.winner, ga.x_win_chance, ga.o_win_chance, ga.tie_chance );
+						Color sqCol = GetWinColor( state.gameResult, state.winner,
+                                                  ga.x_win_chance, ga.o_win_chance, ga.tie_chance );
 						DrawRectangleRec( subRect, sqCol );
 					}
 				}
@@ -160,7 +164,7 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 		DrawLineEx( (Vector2){rect.x + i * rectSz3, rect.y}, (Vector2){rect.x + i * rectSz3, rect.y + rect.width}, lw, GetColor(GuiGetStyle(DEFAULT, LINE_COLOR))  );
 	}
 
-	if ((state.winner) && (state.winner != TIE_GAME)) 
+	if (state.gameResult == RESULT_WINNER)
 	{
 		Color winCol;
 		if (state.winner == WINNER_O) {
@@ -193,7 +197,7 @@ GameState RandomBoard()
 
 		// Check for end game and bail early
 		game = CheckWinner( game );
-		if (game.winner != SQUARE_BLANK) {
+		if (game.gameResult != RESULT_IN_PROGRESS) {
 			break;
 		}
 	}	
@@ -214,15 +218,12 @@ void ResetGallery( GameAppInfo &app )
 
 int PreviewBestMove( GameAppInfo &app, const GameState &game )
 {
-	if (game.winner) {
+	if (game.gameResult != RESULT_IN_PROGRESS) {
 		printf("preview best: game already over\n");
 		return -1;
 	}
 
-	int activePlayer = game.to_move;
 	int bestMove = -1;
-	float bestMoveDiff = -1.0f;
-
 	for (int i=0; i < 9; i++) {
 		if (game.square[i] == SQUARE_BLANK) {
 			GameState evalGame = ApplyMove(game,  i );
@@ -243,11 +244,10 @@ int PreviewBestMove( GameAppInfo &app, const GameState &game )
 
 int ChooseBestMove( GameAppInfo &app, const GameState &game )
 {
-	if (game.winner) {
+	if (game.gameResult != RESULT_IN_PROGRESS) {
 		return -1;
 	}
 
-	int activePlayer = game.to_move;
 	int bestMove = -1;
 	float bestMoveDiff = -1.0f;
 
@@ -264,7 +264,11 @@ int ChooseBestMove( GameAppInfo &app, const GameState &game )
 			else if (game.to_move == SQUARE_O) {
 				my_win = ga.o_win_chance;
 				other_win = ga.x_win_chance;
-			}
+            } else {
+                assert(0); // unreachable
+                my_win = 0.0f;
+                other_win = 0.0f;
+            }
 
 			float moveDiff = my_win - other_win;
 			if (moveDiff > bestMoveDiff) {				
@@ -371,7 +375,7 @@ int main()
 			}
 
 			if (IsKeyPressed(KEY_T)) {
-				if (!app.gameHistory[app.currMove].winner) {
+				if (app.gameHistory[app.currMove].gameResult == RESULT_IN_PROGRESS) {
 					printf("Can't train, game is not finished.\n");
 				} else {
 					printf("Train on this game.\n");
@@ -446,7 +450,7 @@ int main()
 				// Manual play mode
 
 				// If the game is not over, allow moves
-				if (!app.gameHistory[app.currMove].winner)
+				if (app.gameHistory[app.currMove].gameResult == RESULT_IN_PROGRESS)
 				{
 					if (IsMouseButtonPressed(0)) {				
 						// check if we're in a game space
@@ -481,11 +485,11 @@ int main()
 			int promptx = 150;
 			int prompty = 50;
 			GameState &game = app.gameHistory[ app.currMove];
-			if (game.winner == TIE_GAME) {
+			if (game.gameResult == RESULT_TIE_GAME) {
 				DrawText( "Tie Game", promptx, prompty, 20, ORANGE );
-			} else if (game.winner == SQUARE_X) {
+			} else if ((game.gameResult == RESULT_WINNER) && (game.winner == WINNER_X)) {
 				DrawText( "Winner is X", promptx, prompty, 20, RED);
-			} else if (game.winner == SQUARE_O) {
+			} else if ((game.gameResult == RESULT_WINNER) && (game.winner == WINNER_O)) {
 				DrawText( "Winner is O", promptx, prompty, 20, BLUE);
 			} else if (game.to_move == SQUARE_X) {
 				DrawText( "X to Move", promptx, prompty, 20, RED);

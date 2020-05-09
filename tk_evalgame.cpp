@@ -32,16 +32,24 @@ GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 	// random for now
 	GameAnalysis result;
 
-	// Analysis pretty easy if somene one
-	if (game.winner == WINNER_X) {
-		result.x_win_chance = 1.0;
-		result.o_win_chance = 0.0;
-		result.tie_chance = 0.0;
-	} else if (game.winner == WINNER_O) {
-		result.x_win_chance = 0.0;
-		result.o_win_chance = 1.0;
-		result.tie_chance = 0.0;
+	// Analysis pretty easy if somene won
+	if (game.gameResult == RESULT_WINNER)
+	{
+		if (game.winner == WINNER_X) {
+			result.x_win_chance = 1.0;
+			result.o_win_chance = 0.0;
+			result.tie_chance = 0.0;
+		} else if (game.winner == WINNER_O) {
+			result.x_win_chance = 0.0;
+			result.o_win_chance = 1.0;
+			result.tie_chance = 0.0;
+		}
+	} else if (game.gameResult == RESULT_TIE_GAME ) {
+
+		result.tie_chance = 1.0;
 	} else {
+		// RESULT_IN_PROGRESS
+
 		// Test: random chance
 		//result.p0_win = (float)GetRandomValue(0,100) / 100.0f;
 		//result.p1_win = (float)GetRandomValue(0,100) / 100.0f;
@@ -108,6 +116,7 @@ bool _CheckThree( GameState &game, int a, int b, int c )
 	if (( game.square[a] != SQUARE_BLANK) &&
 		( game.square[a] == game.square[b]) &&
 		( game.square[b] == game.square[c]) ) {
+        game.gameResult = RESULT_WINNER;
 		game.winner = game.square[a];
 		game.win0 = a;
 		game.win2 = c;
@@ -158,7 +167,8 @@ GameState CheckWinner( GameState game )
 		}
 	}
 	if (isTied) {
-		result.winner = TIE_GAME;
+		result.gameResult = RESULT_TIE_GAME;
+		//result.winner = TIE_GAME;
 	}
 
 	return result;
@@ -187,33 +197,39 @@ float NodeValUCB1( GameAppInfo &app, MCTSNode &node )
 int RolloutOnce( GameState state, int player )
 {
 	GameState curr = state;
-	while (!curr.winner) {
+	while (!curr.gameResult) {
 		int randMove = ChooseRandomMove( curr );
 		curr = ApplyMove( curr, randMove );
 	}
-
-	if (curr.winner == player) {
-		return 1;
-	} else if (curr.winner == TIE_GAME) {
-		return 0;
-	} else {
-		return -1;
-	}
+    
+    if (curr.gameResult == RESULT_TIE_GAME)
+    {
+        return 0;
+    } else {
+        assert( curr.gameResult == RESULT_WINNER );
+        if (curr.winner == player) {
+            return 1;
+        } else {
+            return -1;
+        }
+    }
 }
 
 int Rollout( GameAppInfo &app, GameState state, int runs, int player )
 {		
 	int result = 0;
-	if (state.winner == player) {
+	if ((state.gameResult == RESULT_WINNER) && (state.winner == player)) {
 		// If this is a winning move for player, count it as all wins		
 		result = runs;
-	} else if (state.winner == TIE_GAME) {
+	} else if (state.gameResult == RESULT_TIE_GAME) {
 		result = 0;
-	} else if (state.winner != IN_PROGRESS) {
+	} else if (state.gameResult != RESULT_IN_PROGRESS) {
 		// other player won
 		result = -runs;
-	} else 
+	}
+    else
 	{
+        // state is still an in-progress game, simulate it until we get an outcome
 		if (app.simMode == SIM_RANDOM)
 		{
 			// Otherwise
@@ -249,7 +265,7 @@ int ChooseRandomMove( const GameState &game )
 	int possibleMoves[9];
 	int numPossibleMoves = 0;
 
-	if (game.winner) {
+	if (game.gameResult != RESULT_IN_PROGRESS) {
 		return -1;
 	}
 
@@ -268,7 +284,7 @@ int ChooseRandomMove( const GameState &game )
 
 int TreeSearchMove( GameAppInfo &app, const GameState &game )
 {
-	if (game.winner) {
+	if (game.gameResult != RESULT_IN_PROGRESS) {
 		return -1;
 	}
 
@@ -295,7 +311,7 @@ int TreeSearchMove( GameAppInfo &app, const GameState &game )
 		while (!isLeaf) {
 			MCTSNode &curr = app.nodes[ currNdx ];
 
-			if (curr.state.winner == IN_PROGRESS)
+			if (curr.state.gameResult == RESULT_IN_PROGRESS)
 			{
 				// find the child with the best UCB 
 				isLeaf = true;
@@ -323,16 +339,14 @@ int TreeSearchMove( GameAppInfo &app, const GameState &game )
 			}
 		}
 
-		
-
 		// If this leaf has already been evaluated, expand it
 		int simNdx = 0;
-		if ((app.nodes[ currNdx ].totalVisits > 0) && (app.nodes[ currNdx ].state.winner == IN_PROGRESS))
+		if ((app.nodes[ currNdx ].totalVisits > 0) && (app.nodes[ currNdx ].state.gameResult == RESULT_IN_PROGRESS))
 		{
 			// Expand the possible moves from best child
 			MCTSNode &curr = app.nodes[currNdx];
 
-			if (curr.state.winner != IN_PROGRESS) {
+			if (curr.state.gameResult != RESULT_IN_PROGRESS) {
 				printf("Hmmm.. trying to expand a terminal\n");
 			}
 
@@ -343,7 +357,24 @@ int TreeSearchMove( GameAppInfo &app, const GameState &game )
 				// Is this a potential move that we haven't expanded yet?
 				if (curr.state.square[i]==SQUARE_BLANK) {
 					GameState nextMove = ApplyMove( curr.state, i );
-					
+                    
+                    // Sanity check
+                    bool hasBlank = false;
+                    for (int j=0; j < 9; j++) {
+                        if (nextMove.square[j]==SQUARE_BLANK) {
+                            hasBlank = true;
+                            break;
+                        }
+                    }
+                    if ((!hasBlank) && (nextMove.gameResult == RESULT_IN_PROGRESS)) {
+                        printf("Curr NDX %d next move %d\n", currNdx, i );
+                        printf("BAD: game has no moves but still marked in progress!\n");
+                        
+                        GameState testMove = ApplyMove( curr.state, i );
+                        
+                        assert(0);
+                    }
+                                            					
 					// Make a child node for it
 					int cndx = MakeNode( app );
 					MCTSNode &child = app.nodes[cndx];
@@ -429,17 +460,20 @@ void TrainHistory( GameAppInfo &app )
 {
 	// First load the results 
 	GameState &gameEnd = app.gameHistory[ app.currMove ];
-	if (gameEnd.winner == WINNER_X) {
+    
+    assert( gameEnd.gameResult != RESULT_IN_PROGRESS );
+    
+	if ((gameEnd.gameResult == RESULT_WINNER) && (gameEnd.winner == WINNER_X)) {
 		app.outputs[0] = 1.0f;
 		app.outputs[1] = 0.0f;
 		app.outputs[2] = 0.0f; // tie
 		app.winXcount++;
-	} else if (gameEnd.winner == WINNER_O) {
+    } else if ((gameEnd.gameResult == RESULT_WINNER) && (gameEnd.winner == WINNER_O)) {
 		app.outputs[0] = 0.0f;
 		app.outputs[1] = 1.0f;
 		app.outputs[2] = 0.0f; // tie
 		app.winOcount++;
-	} else if (gameEnd.winner == TIE_GAME) {
+	} else if (gameEnd.gameResult == RESULT_TIE_GAME) {
 		app.outputs[0] = 0.1f;
 		app.outputs[1] = 0.1f;
 		app.outputs[2] = 1.0f; // tie
@@ -459,7 +493,7 @@ void TrainHistory( GameAppInfo &app )
 void TrainOneStep( GameAppInfo &app, float temperature )
 {
 	// Auto Play
-	if (!app.gameHistory[app.currMove].winner)
+	if (!app.gameHistory[app.currMove].gameResult)
 	{
 		// No winner yet, make the next move
 		int aiMove = -1;

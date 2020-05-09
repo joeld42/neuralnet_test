@@ -28,13 +28,6 @@ enum {
 };
 
 enum {
-	IN_PROGRESS,
-	WINNER_X,
-	WINNER_O,
-	TIE_GAME
-};
-
-enum {
 	SIM_RANDOM,
 	NET_EVAL,
 
@@ -193,7 +186,7 @@ GameState CheckWinner( GameState game )
 		}
 	}
 	if (isTied) {
-		result.winner = TIE_GAME;
+		result.winner = RESULT_ TIE_GAME;
 	}
 
 	return result;

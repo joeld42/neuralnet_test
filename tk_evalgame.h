@@ -14,11 +14,17 @@ enum {
 	SQUARE_O,	
 };
 
+// Game Result
 enum {
-	IN_PROGRESS,
+	RESULT_IN_PROGRESS,	
+	RESULT_WINNER,
+	RESULT_TIE_GAME
+};
+
+enum {
+    WINNER_BLANK, // Not used but placeholder so it lines up with SQUARE_ enum
 	WINNER_X,
 	WINNER_O,
-	TIE_GAME
 };
 
 enum {
@@ -28,10 +34,14 @@ enum {
 	NUM_SIM_MODES
 };
 
+
 struct GameState {
 	uint8_t to_move;
-	uint8_t square[9]; 
+	uint8_t gameResult;
 	uint8_t winner;
+    
+    // tic-toe specific stuff
+    uint8_t square[9];
 	uint8_t win0, win2;	// helper to draw the win line	
 };
 

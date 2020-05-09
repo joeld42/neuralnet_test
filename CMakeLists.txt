@@ -38,8 +38,12 @@ set ( CMAKE_CXX_STANDARD 14)
 # reorganized stuff
 # =========================================================
 add_executable (tk_game_tictoe 
+
 				tk_game_tictoe.cpp
+				
 				tk_evalgame.cpp
+				tk_evalgame.h
+
 				genann.cpp
 				)
 
