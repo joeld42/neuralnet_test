@@ -34,22 +34,82 @@ enum {
 	NUM_SIM_MODES
 };
 
+#define MAX_PLAYERS (2)
+
+// E.g. token color, name, etc..
+struct PlayerInfo {
+    int reserved_todo;
+};
+
+struct GameState;
+
+//typedef returnType (*typeName)(parameterTypes);
+typedef void (*LoadWeightsFunc)( GameState&, double *);
+
+// Setup info for the game that does not
+// change over the game, e.g. number of players
+struct GameInfo {
+    uint8_t numPlayers;
+    uint8_t minPlayerCount;
+    uint8_t maxPlayerCount;
+    PlayerInfo playerInfo[MAX_PLAYERS];
+    
+    // net hyperparameters
+    int net_inputs;
+    int net_hidden_layers;
+    int net_hidden_layer_size;
+        
+    // Callbacks for Game Specific stuff
+    LoadWeightsFunc gameFunc_LoadWeights;
+
+};
+
+// Player state info
+struct PlayerState {
+    
+    // todo: move, debug helper to draw the win line
+    uint8_t winLine0, winLine2;
+};
+
+
+// TODO: Move to game_tictoe
+struct TicToeGameState {
+    // tic-toe specific stuff (will split out)
+    uint8_t square[9];
+    uint8_t win0, win2;    // helper to draw the win line
+    uint8_t lastMove; // the last square moves
+};
 
 struct GameState {
+    
+    // generic stuff
 	uint8_t to_move;
 	uint8_t gameResult;
 	uint8_t winner;
     
-    // tic-toe specific stuff
-    uint8_t square[9];
-	uint8_t win0, win2;	// helper to draw the win line	
+    TicToeGameState gg; // real game
+};
+
+struct PlayerAnalysis {
+    float win_chance;
 };
 
 struct GameAnalysis {
-	float x_win_chance;
-	float o_win_chance;
+    PlayerAnalysis plr[MAX_PLAYERS];
 	float tie_chance;
 };
+
+struct GameStateArray
+{
+    size_t size;
+    size_t capacity;
+    GameState *data;
+};
+
+// Helpers for GameStateArray
+void PushGameState( GameStateArray *games, GameState state );
+void FreeArray( GameStateArray *games );
+void ClearArray( GameStateArray *games );
 
 #define NUM_MCTS_NODE (5000)
 
@@ -80,11 +140,11 @@ enum {
 	NUM_MODES
 };
 
-
-struct GameAppInfo 
+struct GameAppInfo
 {
 	int mode = MODE_PLAY;
 	int currMove;
+    GameInfo info;
     GameState gameHistory[10];
     GameAnalysis gameHistory_A[10];
 
@@ -109,16 +169,20 @@ struct GameAppInfo
 };
 
 
-void LoadWeights( GameState &state, double *inputs );
+void GameInit( GameAppInfo &appInfo );
+//void LoadWeights( GameState &state, double *inputs );
 GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game );
 GameState ApplyMove( GameState prevState, int moveLoc );
 GameState CheckWinner( GameState game );
+void GeneratePossibleMoves( const GameState &game, GameStateArray &moves );
+GameState ChooseRandomMove( GameStateArray possibleMoves );
+GameState ChooseRandomMoveSimple( const GameState &prevState );
 int MakeNode( GameAppInfo &app );
 float NodeValUCB1( GameAppInfo &app, MCTSNode &node );
 int RolloutOnce( GameState state, int player );
 int Rollout( GameAppInfo &app, GameState state, int runs, int player );
-int ChooseRandomMove( const GameState &game );
-int TreeSearchMove( GameAppInfo &app, const GameState &game );
+//int ChooseRandomMove( const GameState &game );
+GameState TreeSearchMove( GameAppInfo &app, const GameState &game );
 void TrainHistory( GameAppInfo &app );
 void TrainOneStep( GameAppInfo &app, float temperature );
 void ResetGame( GameAppInfo &app );

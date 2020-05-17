@@ -432,7 +432,7 @@ GameState ApplyMove( GameState prevState, int moveLoc )
 	GameState result = prevState;
 	result.square[moveLoc] = prevState.to_move;
 	result.to_move = NextPlayer( prevState.to_move );
-
+    result.
 	result = CheckWinner( result );
 
 	return result;
@@ -621,10 +621,11 @@ void DbgPrintTree( GameAppInfo &app, int currNdx, int depth )
 	printf("\n");
 }
 
-int TreeSearchMove( GameAppInfo &app, const GameState &game )
+GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
 {
+    // If the game is won, can't advance it.
 	if (game.winner) {
-		return -1;
+		return game;
 	}
 
 	// initiaze the search
@@ -957,11 +958,9 @@ int main()
 			if (IsKeyPressed(KEY_S)) {
 				// Tree search
 				printf("Tree search....\n");
-				int aiMove = TreeSearchMove( app, app.gameHistory[app.currMove] );
-				if (aiMove < 0) {
-					printf("No valid moves.\n");
-				} else {
-					printf("AI move on square %d\n", aiMove );
+				GameState aiMove = TreeSearchMove( app, app.gameHistory[app.currMove] );
+				
+					printf("AI move on square %d\n", aiMove.zz );
 					int nextMove = app.currMove+1;
 					app.gameHistory[nextMove] = ApplyMove( app.gameHistory[app.currMove], aiMove );
 					app.currMove = nextMove;

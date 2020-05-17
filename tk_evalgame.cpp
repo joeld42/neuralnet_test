@@ -3,30 +3,20 @@
 #include <stdlib.h>
 #include <math.h>
 
-// TODO from raylib -- reimplement
+// TODO LIST in order
+//
+// - Move TieToe game state somewhere, doesn't have to be genericized yet
+// - make LoadWeights a function pointer ot otherwise opaque
+// - Split out the TicToeGameState from the encosing GameState
+// - some way to GenPossibleMoves instead of assuming 9 board spaces
+
+// TODO borrowing this from raylib -- reimplement
 extern "C" {
 int GetRandomValue( int minVal, int maxVal );
 }
 
-void LoadWeights( GameState &state, double *inputs )
-{
-	// one weight per sqaure
-	for (int i=0; i < 9; i++) {
-		if (state.square[i]==SQUARE_X) {
-			inputs[i] = -1.0;
-		} else if (state.square[i]==SQUARE_O) {
-			inputs[i] = 1.0;
-		} else {
-			inputs[i] = 0.0;
-		}
-	}
 
-	// Weight for whose turn it is
-	inputs[9] = (state.to_move==SQUARE_X) ? 1.0 : 0.0;
-	inputs[10] = (state.to_move==SQUARE_O) ? 1.0 : 0.0;
-}
-
-
+// ZARDOZ: make this support multi-player, this should be generic enough
 GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 {
 	// random for now
@@ -36,12 +26,12 @@ GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 	if (game.gameResult == RESULT_WINNER)
 	{
 		if (game.winner == WINNER_X) {
-			result.x_win_chance = 1.0;
-			result.o_win_chance = 0.0;
+			result.plr[0].win_chance = 1.0;
+			result.plr[1].win_chance = 0.0;
 			result.tie_chance = 0.0;
 		} else if (game.winner == WINNER_O) {
-			result.x_win_chance = 0.0;
-			result.o_win_chance = 1.0;
+			result.plr[0].win_chance = 0.0;
+			result.plr[1].win_chance = 1.0;
 			result.tie_chance = 0.0;
 		}
 	} else if (game.gameResult == RESULT_TIE_GAME ) {
@@ -58,7 +48,8 @@ GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 		// for (int i=0; i < 11; i++) {
 		// 	printf("LoadWeights: i %d is %3.2lf\n", i, app.inputs[i] );
 		// }
-		LoadWeights( game, app.inputs );
+        assert (app.info.gameFunc_LoadWeights != NULL);
+		app.info.gameFunc_LoadWeights( game, app.inputs );
 		const double *outs = genann_run( app.net, app.inputs );
 		// double outs[2];
 
@@ -81,8 +72,8 @@ GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 		{
 			total = 1.0f;
 		}
-		result.x_win_chance = a / total;
-		result.o_win_chance = b / total;
+		result.plr[0].win_chance = a / total;
+		result.plr[1].win_chance = b / total;
 		result.tie_chance = c / total;
 		
 		
@@ -90,95 +81,12 @@ GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 	return result;
 }
 
-int NextPlayer( int player )
-{
-	if (player == SQUARE_O) {
-		return SQUARE_X;
-	} else {
-		return SQUARE_O;
-	}
-}
-
-
-GameState ApplyMove( GameState prevState, int moveLoc )
-{
-	GameState result = prevState;
-	result.square[moveLoc] = prevState.to_move;
-	result.to_move = NextPlayer( prevState.to_move );
-
-	result = CheckWinner( result );
-
-	return result;
-}
-
-bool _CheckThree( GameState &game, int a, int b, int c )
-{
-	if (( game.square[a] != SQUARE_BLANK) &&
-		( game.square[a] == game.square[b]) &&
-		( game.square[b] == game.square[c]) ) {
-        game.gameResult = RESULT_WINNER;
-		game.winner = game.square[a];
-		game.win0 = a;
-		game.win2 = c;
-		return true;
-	}
-
-	return false;
-}
-
-
-// Returns BLANK, X, or O depending on who won
-GameState CheckWinner( GameState game )
-{
-	GameState result = game;
-	int rowPatterns[] = {
-		// horiz rows
-		0, 1, 2,
-		3, 4, 5,
-		6, 7, 8,
-		
-		// vert rows
-		0, 3, 6,
-		1, 4, 7,
-		2, 5, 8,
-
-		// diag rows
-		0, 4, 8,
-		6, 4, 2
-	};
-
-	for (int rndx =0; rndx < 8; rndx++)
-	{
-		int ndx = rndx * 3;
-		if (_CheckThree( result, 
-			rowPatterns[ndx+0], 
-			rowPatterns[ndx+1],
-			rowPatterns[ndx+2] )) {
-			return result;
-		}
-	}
-
-	// See if it's a tied game
-	bool isTied = true;
-	for (int i=0; i < 9; i++) {
-		if (game.square[i] == SQUARE_BLANK) {
-			isTied = false;
-			break;
-		}
-	}
-	if (isTied) {
-		result.gameResult = RESULT_TIE_GAME;
-		//result.winner = TIE_GAME;
-	}
-
-	return result;
-}
-
 // This assumes all the nodes get zeroed out
 int MakeNode( GameAppInfo &app )
 {
-	return app.numNodes++;
+    return app.numNodes++;
 }
+
 
 float NodeValUCB1( GameAppInfo &app, MCTSNode &node )
 {
@@ -197,10 +105,15 @@ float NodeValUCB1( GameAppInfo &app, MCTSNode &node )
 int RolloutOnce( GameState state, int player )
 {
 	GameState curr = state;
+    GameStateArray possibleMoves = {};
 	while (!curr.gameResult) {
-		int randMove = ChooseRandomMove( curr );
-		curr = ApplyMove( curr, randMove );
+		//int randMove = ChooseRandomMove( curr );
+		//curr = ApplyMove( curr, randMove );
+        
+        GeneratePossibleMoves( curr, possibleMoves );
+        curr = ChooseRandomMove( possibleMoves );
 	}
+    FreeArray( &possibleMoves );
     
     if (curr.gameResult == RESULT_TIE_GAME)
     {
@@ -244,9 +157,9 @@ int Rollout( GameAppInfo &app, GameState state, int runs, int player )
 			GameAnalysis ga = AnalyzeGame( app, state );
 			int wins;
 			if (player==SQUARE_X) {
-				wins = (ga.x_win_chance * runs) + (ga.o_win_chance * -runs);
+				wins = (ga.plr[0].win_chance * runs) + (ga.plr[1].win_chance * -runs);
 			} else {
-				wins = (ga.x_win_chance * -runs) + (ga.o_win_chance * runs);
+				wins = (ga.plr[0].win_chance * -runs) + (ga.plr[1].win_chance * runs);
 			}
 			result = wins;
 		}
@@ -260,20 +173,23 @@ int Rollout( GameAppInfo &app, GameState state, int runs, int player )
 	return result;
 }
 
-int ChooseRandomMove( const GameState &game )
+#if 0
+// ZARDOZ: refactor the PossibleMoves thing to generate gamestates
+GameState ChooseRandomMove( const GameState &game )
 {
-	int possibleMoves[9];
-	int numPossibleMoves = 0;
-
-	if (game.gameResult != RESULT_IN_PROGRESS) {
-		return -1;
-	}
-
-	for (int i=0; i < 9; i++) {
-		if (game.square[i] == SQUARE_BLANK) {
-			possibleMoves[numPossibleMoves++] = i;
-		}
-	}
+//	int possibleMoves[9];
+//	int numPossibleMoves = 0;
+//
+//	if (game.gameResult != RESULT_IN_PROGRESS) {
+//		return -1;
+//	}
+//
+//	for (int i=0; i < 9; i++) {
+//		if (game.gg.square[i] == SQUARE_BLANK) {
+//			possibleMoves[numPossibleMoves++] = i;
+//		}
+//	}
+    GameStateArray possibleMoves = GeneratePossibleMoves( game );
 
 	if (numPossibleMoves==0) {
 		return 0;
@@ -281,11 +197,51 @@ int ChooseRandomMove( const GameState &game )
 		return possibleMoves[ GetRandomValue( 0, numPossibleMoves-1) ];
 	}
 }
+#endif
 
-int TreeSearchMove( GameAppInfo &app, const GameState &game )
+GameState ChooseRandomMove( GameStateArray possibleMoves )
 {
+    assert( possibleMoves.size > 0);
+    size_t moveNdx = GetRandomValue( 0, possibleMoves.size - 1);
+    return possibleMoves.data[moveNdx];
+}
+
+// Helper that generates the possible moves and picks one at random
+// Not efficient if you are choosing multiple moves
+GameState ChooseRandomMoveSimple( const GameState &prevState )
+{
+    GameState result = {};
+    GameStateArray possibleMoves= {};
+    GeneratePossibleMoves( prevState, possibleMoves );
+    if (possibleMoves.size > 0) {
+        result = ChooseRandomMove( possibleMoves );
+    }
+    return result;
+}
+
+void GeneratePossibleMoves( const GameState &game, GameStateArray &moves )
+{
+    ClearArray( &moves );
+    
+    if (game.gameResult != RESULT_IN_PROGRESS) {
+        return;
+    }
+    
+    for (int i=0; i < 9; i++) {
+        if (game.gg.square[i] == SQUARE_BLANK) {
+            GameState moveState = ApplyMove( game, i );
+            PushGameState( &moves, moveState );
+        }
+    }
+}
+
+// ZARDOZ: mostyl genericified, cleanup fallout from other change
+GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
+{
+    GameState result = game;
+    
 	if (game.gameResult != RESULT_IN_PROGRESS) {
-		return -1;
+        return game;
 	}
 
 	// initiaze the search
@@ -355,25 +311,8 @@ int TreeSearchMove( GameAppInfo &app, const GameState &game )
 			for (int i=0; i < 9; i++) {
 
 				// Is this a potential move that we haven't expanded yet?
-				if (curr.state.square[i]==SQUARE_BLANK) {
+				if (curr.state.gg.square[i]==SQUARE_BLANK) {
 					GameState nextMove = ApplyMove( curr.state, i );
-                    
-                    // Sanity check
-                    bool hasBlank = false;
-                    for (int j=0; j < 9; j++) {
-                        if (nextMove.square[j]==SQUARE_BLANK) {
-                            hasBlank = true;
-                            break;
-                        }
-                    }
-                    if ((!hasBlank) && (nextMove.gameResult == RESULT_IN_PROGRESS)) {
-                        printf("Curr NDX %d next move %d\n", currNdx, i );
-                        printf("BAD: game has no moves but still marked in progress!\n");
-                        
-                        GameState testMove = ApplyMove( curr.state, i );
-                        
-                        assert(0);
-                    }
                                             					
 					// Make a child node for it
 					int cndx = MakeNode( app );
@@ -453,9 +392,11 @@ int TreeSearchMove( GameAppInfo &app, const GameState &game )
 	}
 
 	//printf("iter %d Total Nodes %d Best Move num; %d\n", iter, app.numNodes, bestMoveNum );
-	return bestMoveNum;
+    return app.nodes[bestMoveNdx].state;
 }
 
+// ZARDOZ: clean up winner stuff. Might not want to train on
+// move history anyways, but instead on the result of TreeSearch
 void TrainHistory( GameAppInfo &app )
 {
 	// First load the results 
@@ -483,20 +424,24 @@ void TrainHistory( GameAppInfo &app )
 	// Now train it on every game state
 	for (int i=0; i <= app.currMove; i++)
 	{
-		LoadWeights( app.gameHistory[i], app.inputs );
+        assert( app.info.gameFunc_LoadWeights != NULL );
+		app.info.gameFunc_LoadWeights( app.gameHistory[i], app.inputs );
 		genann_train( app.net, app.inputs, app.outputs, 0.5 );
 		app.trainCount++;
 	}
 	app.gameCount++;
 }
 
+// ZARDOZ: clean up winner stuff. Might not want to train on
+// move history anyways, but instead on the result of TreeSearch
 void TrainOneStep( GameAppInfo &app, float temperature )
 {
 	// Auto Play
 	if (!app.gameHistory[app.currMove].gameResult)
 	{
 		// No winner yet, make the next move
-		int aiMove = -1;
+        GameState aiMove;
+        
 		//if ((app.currMove==0)||(UniformRandom() > temperature)) {
 
 		// choose hte first five moves at random, then use the MCTS
@@ -504,13 +449,13 @@ void TrainOneStep( GameAppInfo &app, float temperature )
 			//aiMove = ChooseBestMove( app, app.gameHistory[app.currMove] );
 			aiMove = TreeSearchMove( app, app.gameHistory[app.currMove] );
 		} else {
-			aiMove = ChooseRandomMove(  app.gameHistory[app.currMove] );
+			aiMove = ChooseRandomMoveSimple(  app.gameHistory[app.currMove] );
 		}
-		if (aiMove >= 0 ) {
-			int nextMove = app.currMove+1;
-			app.gameHistory[nextMove] = ApplyMove( app.gameHistory[app.currMove], aiMove );
-			app.currMove = nextMove;
-		}
+		
+        int nextMove = app.currMove+1;
+        app.gameHistory[nextMove] = aiMove;
+        app.currMove = nextMove;
+		
 	} else {
 		// We have a winner, train the game
 		TrainHistory( app );
@@ -525,11 +470,69 @@ void ResetGame( GameAppInfo &app )
 	app.gameHistory[0].to_move = SQUARE_X; // TODO: random
 }
 
+// Initializes the game state. Expects some stuff to be filled out (todo: document/assert this)
+void GameInit( GameAppInfo &app )
+{
+    app.net = genann_init( app.info.net_inputs,
+                          app.info.net_hidden_layers,
+                          app.info.net_hidden_layer_size,
+                          3 ); // 3 outs: win chance, lose chance, tie chance
+    
+    app.inputs = (double*)malloc( sizeof(double) * 11 );
+    app.outputs = (double*)malloc( sizeof(double) * 3 );
+
+    app.nodes = (MCTSNode*)malloc(sizeof(MCTSNode) * NUM_MCTS_NODE );
+    app.numNodes = 0;
+    app.simMode = NET_EVAL;
+
+    genann_randomize( app.net );
+
+    ResetGame( app );
+}
 
 // -------------------------------------------
 //  Utilities
 // -------------------------------------------
+// ZARDOZ: use a different random state thing.
 float UniformRandom()
 {
 	return (float)rand() / (float)RAND_MAX;
+}
+
+
+void PushGameState( GameStateArray *games, GameState state )
+{
+    // Need to grow array?
+    if (games->size >= games->capacity) {
+        // start with size of 16
+        size_t newSize = games->capacity;
+        if (newSize == 0) {
+            newSize = 16;
+        } else {
+            // TODO: might want to grow linearly after some point here
+            newSize = newSize * 2;
+        }
+        games->data = (GameState*)realloc( games->data, newSize * sizeof( GameState) );
+        games->capacity = newSize;
+    }
+    
+    size_t newIndex = games->size;
+    games->size++;
+    games->data[ newIndex ] = state;
+}
+
+void ClearArray( GameStateArray *games )
+{
+    if (games->capacity > 0) {
+        memset( games->data, 0, sizeof(GameState)*games->capacity );
+    }
+    games->size = 0;
+}
+
+void FreeArray( GameStateArray *games )
+{
+    free( games->data );
+    games->capacity = 0;
+    games->size = 0;
+    games->data = NULL;
 }

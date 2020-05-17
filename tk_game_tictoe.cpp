@@ -15,6 +15,71 @@
 // TODO: move these somewhere
 Rectangle g_screenRect[9];
 
+bool _CheckThree( GameState &game, int a, int b, int c )
+{
+    if (( game.gg.square[a] != SQUARE_BLANK) &&
+        ( game.gg.square[a] == game.gg.square[b]) &&
+        ( game.gg.square[b] == game.gg.square[c]) ) {
+        game.gameResult = RESULT_WINNER;
+        game.winner = game.gg.square[a];
+        game.gg.win0 = a;
+        game.gg.win2 = c;
+        return true;
+    }
+
+    return false;
+}
+
+
+//
+// Returns BLANK, X, or O depending on who won
+GameState CheckWinner( GameState game )
+{
+    GameState result = game;
+    int rowPatterns[] = {
+        // horiz rows
+        0, 1, 2,
+        3, 4, 5,
+        6, 7, 8,
+        
+        // vert rows
+        0, 3, 6,
+        1, 4, 7,
+        2, 5, 8,
+
+        // diag rows
+        0, 4, 8,
+        6, 4, 2
+    };
+
+    for (int rndx =0; rndx < 8; rndx++)
+    {
+        int ndx = rndx * 3;
+        if (_CheckThree( result,
+            rowPatterns[ndx+0],
+            rowPatterns[ndx+1],
+            rowPatterns[ndx+2] )) {
+            return result;
+        }
+    }
+
+    // See if it's a tied game
+    bool isTied = true;
+    for (int i=0; i < 9; i++) {
+        if (game.gg.square[i] == SQUARE_BLANK) {
+            isTied = false;
+            break;
+        }
+    }
+    if (isTied) {
+        result.gameResult = RESULT_TIE_GAME;
+        //result.winner = TIE_GAME;
+    }
+
+    return result;
+}
+
+
 float Lerp( float a, float b, float t)
 {
 	return (a*(1.0-t)) + (b*t);
@@ -122,22 +187,22 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 			
 				if (showPreview) {
 					GameAnalysis &ga = app->preview[sqNdx];
-					if ((ga.x_win_chance > 0.0) || (ga.o_win_chance > 0.0)) {
+					if ((ga.plr[0].win_chance > 0.0) || (ga.plr[1].win_chance > 0.0)) {
 						Color sqCol = GetWinColor( state.gameResult, state.winner,
-                                                  ga.x_win_chance, ga.o_win_chance, ga.tie_chance );
+                                    ga.plr[0].win_chance, ga.plr[1].win_chance, ga.tie_chance );
 						DrawRectangleRec( subRect, sqCol );
 					}
 				}
 			}
 
 			rad = subRect.width * 0.5f;
-			if (state.square[sqNdx] == SQUARE_O) {
+			if (state.gg.square[sqNdx] == SQUARE_O) {
 				// draw O				
 				for (int w=0; w < 3; w++) {
 					DrawCircleLines( subRect.x + rad, subRect.y + rad, rad-(2+w), BLUE );
 				}
 
-			} else if (state.square[sqNdx] == SQUARE_X) {
+			} else if (state.gg.square[sqNdx] == SQUARE_X) {
 				// Draw X
 				DrawLineEx( (Vector2){subRect.x + 4, subRect.y + subRect.height - 4}, 
 							(Vector2){subRect.x + subRect.width-4, subRect.y + 4}, 3, RED );
@@ -148,9 +213,9 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 				// It's a blank, don't draw anything
 			}
 			
-			if (state.win0==sqNdx) {
+			if (state.gg.win0==sqNdx) {
 				wA = (Vector2){subRect.x + rad, subRect.y + rad};
-			} else if (state.win2==sqNdx) {
+			} else if (state.gg.win2==sqNdx) {
 				wB = (Vector2){subRect.x + rad, subRect.y + rad};
 			}
 		}
@@ -225,7 +290,7 @@ int PreviewBestMove( GameAppInfo &app, const GameState &game )
 
 	int bestMove = -1;
 	for (int i=0; i < 9; i++) {
-		if (game.square[i] == SQUARE_BLANK) {
+		if (game.gg.square[i] == SQUARE_BLANK) {
 			GameState evalGame = ApplyMove(game,  i );
 			GameAnalysis ga = AnalyzeGame( app, evalGame );
 			
@@ -252,18 +317,18 @@ int ChooseBestMove( GameAppInfo &app, const GameState &game )
 	float bestMoveDiff = -1.0f;
 
 	for (int i=0; i < 9; i++) {
-		if (game.square[i] == SQUARE_BLANK) {
+		if (game.gg.square[i] == SQUARE_BLANK) {
 			GameState evalGame = ApplyMove(game,  i );
 			GameAnalysis ga = AnalyzeGame( app, evalGame );
 			
 			float my_win, other_win;
 			if (game.to_move == SQUARE_X) {
-				my_win = ga.x_win_chance;
-				other_win = ga.o_win_chance;
+				my_win = ga.plr[0].win_chance;
+				other_win = ga.plr[1].win_chance;
 			}
 			else if (game.to_move == SQUARE_O) {
-				my_win = ga.o_win_chance;
-				other_win = ga.x_win_chance;
+				my_win = ga.plr[1].win_chance;
+				other_win = ga.plr[0].win_chance;
             } else {
                 assert(0); // unreachable
                 my_win = 0.0f;
@@ -281,6 +346,46 @@ int ChooseBestMove( GameAppInfo &app, const GameState &game )
 	return bestMove;
 }
 
+// make this a callback from the eval game
+void LoadWeights_TicToe( GameState &state, double *inputs )
+{
+    // one weight per sqaure
+    for (int i=0; i < 9; i++) {
+        if (state.gg.square[i]==SQUARE_X) {
+            inputs[i] = -1.0;
+        } else if (state.gg.square[i]==SQUARE_O) {
+            inputs[i] = 1.0;
+        } else {
+            inputs[i] = 0.0;
+        }
+    }
+
+    // Weight for whose turn it is
+    inputs[9] = (state.to_move==SQUARE_X) ? 1.0 : 0.0;
+    inputs[10] = (state.to_move==SQUARE_O) ? 1.0 : 0.0;
+}
+
+int NextPlayer( int player )
+{
+    if (player == SQUARE_O) {
+        return SQUARE_X;
+    } else {
+        return SQUARE_O;
+    }
+}
+
+// ZARDOZ: this seems pretty generic, might need to clean up the NextPlayer stuff
+GameState ApplyMove( GameState prevState, int moveLoc )
+{
+    GameState result = prevState;
+    result.gg.square[moveLoc] = prevState.to_move;
+    result.gg.lastMove = moveLoc;
+    result.to_move = NextPlayer( prevState.to_move );
+    
+    result = CheckWinner( result );
+
+    return result;
+}
 
 
 int main()
@@ -297,18 +402,18 @@ int main()
     SetTargetFPS(30);
 
     GameAppInfo app = {};
+    
+    // Set up the metadata for the game
+    app.info.minPlayerCount = 2;
+    app.info.maxPlayerCount = 2;
+    app.info.net_inputs = 11;
+    app.info.net_hidden_layers = 3;
+    app.info.net_hidden_layer_size = 64;
+    
+    app.info.gameFunc_LoadWeights = LoadWeights_TicToe;
 
-    app.net = genann_init( 11, 3, 64, 3 );
-    app.inputs = (double*)malloc( sizeof(double) * 11 );
-    app.outputs = (double*)malloc( sizeof(double) * 3 );
-
-    app.nodes = (MCTSNode*)malloc(sizeof(MCTSNode) * NUM_MCTS_NODE );
-    app.numNodes = 0;
-    app.simMode = NET_EVAL;
-
-    genann_randomize( app.net );
-
-	ResetGame( app );    
+    GameInit( app );
+        
     //ResetGallery( app );
 
     int autoTrain = 0;
@@ -363,13 +468,14 @@ int main()
 			if (IsKeyPressed(KEY_S)) {
 				// Tree search
 				printf("Tree search....\n");
-				int aiMove = TreeSearchMove( app, app.gameHistory[app.currMove] );
-				if (aiMove < 0) {
+                GameState currMove = app.gameHistory[app.currMove];
+				GameState aiMove = TreeSearchMove( app, currMove );
+				if (aiMove.gg.lastMove == currMove.gg.lastMove ) {
 					printf("No valid moves.\n");
 				} else {
-					printf("AI move on square %d\n", aiMove );
+					printf("AI move on square %d\n", aiMove.gg.lastMove );
 					int nextMove = app.currMove+1;
-					app.gameHistory[nextMove] = ApplyMove( app.gameHistory[app.currMove], aiMove );
+                    app.gameHistory[nextMove] = aiMove;
 					app.currMove = nextMove;
 				}
 			}
@@ -423,10 +529,10 @@ int main()
 				for (int i=0; i < 9; i++) {
 					printf("Square %d: X %3.2f, O %3.2f (sum %3.2f)\n", 
 						i, 
-						app.preview[i].x_win_chance, 
-						app.preview[i].o_win_chance,
+						app.preview[i].plr[0].win_chance,
+						app.preview[i].plr[1].win_chance,
 
-						app.preview[i].x_win_chance + app.preview[i].o_win_chance  );
+						app.preview[i].plr[0].win_chance + app.preview[i].plr[1].win_chance  );
 				}
 			}
 
@@ -457,7 +563,7 @@ int main()
 						Vector2 mousePos = GetMousePosition();
 						Rectangle mouseRect = (Rectangle){ mousePos.x, mousePos.y, 1, 1 };
 						for (int i=0; i < 9; i++) {						
-							if (app.gameHistory[app.currMove].square[i]!=SQUARE_BLANK) {
+							if (app.gameHistory[app.currMove].gg.square[i]!=SQUARE_BLANK) {
 								// Square is occupied
 								printf("Square is occupied.\n");
 							} else if (CheckCollisionRecs( g_screenRect[i], mouseRect )) {
@@ -507,14 +613,14 @@ int main()
 			DrawText( buff, promptx, 422, 20, ORANGE );
 
 			DrawBoard( gameRect, game, 
-				analysis.x_win_chance, analysis.o_win_chance, analysis.tie_chance,
+				analysis.plr[0].win_chance, analysis.plr[1].win_chance, analysis.tie_chance,
 				&app, true  );
 
 			temperature = GuiSlider((Rectangle){ 150, 450, 165, 20 }, 
 				"Temperature", TextFormat("%0.3f", temperature) , temperature, 0.0, 1.0);
 
 			DrawText( TextFormat("X: %3.2f O: %3.2f Tie: %3.2f", 
-				analysis.x_win_chance, analysis.o_win_chance, analysis.tie_chance ),
+				analysis.plr[1].win_chance, analysis.plr[1].win_chance, analysis.tie_chance ),
 				150, 480, 20, BLUE );
 
 			// Show history too
@@ -542,8 +648,8 @@ int main()
 					DrawBoard ( 
 						(Rectangle){ (690.f-560.f)*0.5f+ 10.f + (56.f*i), 5 + (56.f*j), 50, 50 }, 
 						app.gridBoards[ndx], 
-						app.gridBoards_A[ndx].x_win_chance,
-						app.gridBoards_A[ndx].o_win_chance, 
+						app.gridBoards_A[ndx].plr[0].win_chance,
+						app.gridBoards_A[ndx].plr[1].win_chance, 
 						app.gridBoards_A[ndx].tie_chance, 
 						NULL, false );
 				}
