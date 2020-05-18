@@ -156,7 +156,7 @@ int Rollout( GameAppInfo &app, GameState state, int runs, int player )
 			// Use the net to do the sim
 			GameAnalysis ga = AnalyzeGame( app, state );
 			int wins;
-			if (player==SQUARE_X) {
+			if (player==PLAYER_1) {
 				wins = (ga.plr[0].win_chance * runs) + (ga.plr[1].win_chance * -runs);
 			} else {
 				wins = (ga.plr[0].win_chance * -runs) + (ga.plr[1].win_chance * runs);
@@ -164,10 +164,6 @@ int Rollout( GameAppInfo &app, GameState state, int runs, int player )
 			result = wins;
 		}
 	}
-
-	// if (state.to_move != player) {
-	// 	result = -result;
-	// }
 
 	//printf("Rollout: %d/%d wins\n", wins, runs );
 	return result;
@@ -255,20 +251,6 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
 				float bestScore = -999999.0f;
 				int bestChildNdx = 0;
                 
-                /*
-				for (int i=0; i < 9; i++) {
-					if (curr.childNdx[i] != 0) {
-						// This is a non-leaf node, potentially expand
-						isLeaf = false;
-						int childNdx = curr.childNdx[i];
-						float ucb = NodeValUCB1( app, app.nodes[ childNdx ] );
-						if (ucb > bestScore) {
-							bestScore = ucb;
-							bestChildNdx = childNdx;
-						}
-					}
-				}
-                 */
                 if (curr.leftChildNdx==0) {
                     isLeaf = true;
                 } else {
@@ -330,7 +312,7 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
                // Use the current node?? I guess??
                 simNdx = currNdx;
                 printf("BAD??? Will sim current I guess\n");
-            }            
+            }
 		} else {
 			simNdx = currNdx;
 		}
@@ -460,7 +442,7 @@ void ResetGame( GameAppInfo &app )
 {
 	app.currMove = 0;
 	app.gameHistory[0] = (GameState){};
-	app.gameHistory[0].to_move = SQUARE_X; // TODO: random
+	app.gameHistory[0].to_move = PLAYER_1; // TODO: random starting player
 }
 
 // Initializes the game state. Expects some stuff to be filled out (todo: document/assert this)
