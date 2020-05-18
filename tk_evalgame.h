@@ -22,9 +22,10 @@ enum {
 };
 
 enum {
-    WINNER_BLANK, // Not used but placeholder so it lines up with SQUARE_ enum
-	WINNER_X,
-	WINNER_O,
+    PLAYER_NULL, // Note: still assumes this lines up with SQUARE_ enum
+	PLAYER_1,
+	PLAYER_2,
+    // etc...
 };
 
 enum {
@@ -42,9 +43,11 @@ struct PlayerInfo {
 };
 
 struct GameState;
+struct GameStateArray;
 
 //typedef returnType (*typeName)(parameterTypes);
 typedef void (*LoadWeightsFunc)( GameState&, double *);
+typedef void (*GeneratePossibleMovesFunc)( const GameState &game, GameStateArray &moves );
 
 // Setup info for the game that does not
 // change over the game, e.g. number of players
@@ -61,7 +64,7 @@ struct GameInfo {
         
     // Callbacks for Game Specific stuff
     LoadWeightsFunc gameFunc_LoadWeights;
-
+    GeneratePossibleMovesFunc gameFunc_GeneratePossibleMoves;
 };
 
 // Player state info
@@ -118,7 +121,9 @@ struct MCTSNode
 	GameState state;
 	int parentNdx;
 
-	int childNdx[9]; // Note 0 means no child because root is 0
+	//int childNdx[9]; // Note 0 means no child because root is 0
+    int leftChildNdx;
+    int rightSiblingNdx;
 	
 	float totalWins;
 	float totalVisits;
@@ -128,7 +133,7 @@ struct MCTSNode
 	int level;
 	int xval;
 	bool selected;
-	bool expanded;
+    bool ui_expanded;
 };
 
 
@@ -164,24 +169,20 @@ struct GameAppInfo
 
     MCTSNode *nodes;
     int numNodes;
-
+    
     GameAnalysis preview[9]; // preview for all squares
 };
 
 
 void GameInit( GameAppInfo &appInfo );
-//void LoadWeights( GameState &state, double *inputs );
 GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game );
-GameState ApplyMove( GameState prevState, int moveLoc );
 GameState CheckWinner( GameState game );
-void GeneratePossibleMoves( const GameState &game, GameStateArray &moves );
-GameState ChooseRandomMove( GameStateArray possibleMoves );
-GameState ChooseRandomMoveSimple( const GameState &prevState );
+GameState ChooseRandomMove( GameAppInfo &app, GameStateArray &possibleMoves );
+GameState ChooseRandomMoveSimple( GameAppInfo &app, const GameState &prevState );
 int MakeNode( GameAppInfo &app );
 float NodeValUCB1( GameAppInfo &app, MCTSNode &node );
 int RolloutOnce( GameState state, int player );
 int Rollout( GameAppInfo &app, GameState state, int runs, int player );
-//int ChooseRandomMove( const GameState &game );
 GameState TreeSearchMove( GameAppInfo &app, const GameState &game );
 void TrainHistory( GameAppInfo &app );
 void TrainOneStep( GameAppInfo &app, float temperature );

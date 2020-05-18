@@ -12,6 +12,12 @@
 
 #include "tk_evalgame.h"
 
+#define  RND_IMPLEMENTATION
+#include "rnd.h"
+
+void GeneratePossibleMoves_TicToe( const GameState &game, GameStateArray &moves );
+GameState ApplyMove( GameState prevState, int moveLoc );
+
 // TODO: move these somewhere
 Rectangle g_screenRect[9];
 
@@ -120,9 +126,9 @@ Color GetWinColor( int result, int winner, float x_win_chance, float o_win_chanc
 
 	if (result == RESULT_WINNER)
 	{
-		if (winner == WINNER_O) {
+		if (winner == PLAYER_2) {
 			win_c = winCol_O;
-		} else if (winner == WINNER_X) {
+		} else if (winner == PLAYER_1) {
 			win_c = winCol_X;
 		}
 	} else {
@@ -232,9 +238,9 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 	if (state.gameResult == RESULT_WINNER)
 	{
 		Color winCol;
-		if (state.winner == WINNER_O) {
+		if (state.winner == PLAYER_2) {
 			winCol = BLUE;
-		} else if (state.winner == WINNER_X) {
+		} else if (state.winner == PLAYER_1) {
 			winCol = RED;
 		}
 		DrawRectangleLines( rect.x, rect.y, rect.width, rect.height, winCol );
@@ -244,7 +250,7 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 }
 
 
-GameState RandomBoard()
+GameState RandomBoard( GameAppInfo &app )
 {
 	GameState game = {};
 	int moves[9] = { 0,1,2,3,4,5,6,7,8 };
@@ -258,7 +264,8 @@ GameState RandomBoard()
 	int numMoves = GetRandomValue( 0, 8 );
 	for (int i=0; i < numMoves; i++ )
 	{
-		game = ApplyMove( game, moves[i] );
+		//game = ApplyMove( game, moves[i] );
+        game = ChooseRandomMoveSimple( app, game );
 
 		// Check for end game and bail early
 		game = CheckWinner( game );
@@ -274,7 +281,7 @@ GameState RandomBoard()
 void ResetGallery( GameAppInfo &app )
 {
 	for (int i=0; i < 100; i++) {
-		app.gridBoards[i] = RandomBoard();
+		app.gridBoards[i] = RandomBoard( app );
 		app.gridBoards_A[i] = AnalyzeGame( app, app.gridBoards[i] );
 	}
 }
@@ -315,6 +322,11 @@ int ChooseBestMove( GameAppInfo &app, const GameState &game )
 
 	int bestMove = -1;
 	float bestMoveDiff = -1.0f;
+    
+    GameStateArray possibleMoves = {};
+    GeneratePossibleMoves_TicToe( game, possibleMoves );
+    
+    
 
 	for (int i=0; i < 9; i++) {
 		if (game.gg.square[i] == SQUARE_BLANK) {
@@ -365,6 +377,7 @@ void LoadWeights_TicToe( GameState &state, double *inputs )
     inputs[10] = (state.to_move==SQUARE_O) ? 1.0 : 0.0;
 }
 
+
 int NextPlayer( int player )
 {
     if (player == SQUARE_O) {
@@ -374,7 +387,6 @@ int NextPlayer( int player )
     }
 }
 
-// ZARDOZ: this seems pretty generic, might need to clean up the NextPlayer stuff
 GameState ApplyMove( GameState prevState, int moveLoc )
 {
     GameState result = prevState;
@@ -385,6 +397,16 @@ GameState ApplyMove( GameState prevState, int moveLoc )
     result = CheckWinner( result );
 
     return result;
+}
+
+void GeneratePossibleMoves_TicToe( const GameState &game, GameStateArray &moves )
+{
+    for (int i=0; i < 9; i++) {
+        if (game.gg.square[i] == SQUARE_BLANK) {
+            GameState moveState = ApplyMove( game, i );
+            PushGameState( &moves, moveState );
+        }
+    }
 }
 
 
@@ -411,6 +433,7 @@ int main()
     app.info.net_hidden_layer_size = 64;
     
     app.info.gameFunc_LoadWeights = LoadWeights_TicToe;
+    app.info.gameFunc_GeneratePossibleMoves = GeneratePossibleMoves_TicToe;
 
     GameInit( app );
         
@@ -593,9 +616,9 @@ int main()
 			GameState &game = app.gameHistory[ app.currMove];
 			if (game.gameResult == RESULT_TIE_GAME) {
 				DrawText( "Tie Game", promptx, prompty, 20, ORANGE );
-			} else if ((game.gameResult == RESULT_WINNER) && (game.winner == WINNER_X)) {
+			} else if ((game.gameResult == RESULT_WINNER) && (game.winner == PLAYER_1)) {
 				DrawText( "Winner is X", promptx, prompty, 20, RED);
-			} else if ((game.gameResult == RESULT_WINNER) && (game.winner == WINNER_O)) {
+			} else if ((game.gameResult == RESULT_WINNER) && (game.winner == PLAYER_2)) {
 				DrawText( "Winner is O", promptx, prompty, 20, BLUE);
 			} else if (game.to_move == SQUARE_X) {
 				DrawText( "X to Move", promptx, prompty, 20, RED);
@@ -666,7 +689,7 @@ int main()
 			}
 
 			int rowHite = 85;
-			app.nodes[0].expanded = true;
+			app.nodes[0].ui_expanded = true;
 			for (int level=0; level < 6; level++) {
 				float xval = 10.0f;
 
@@ -677,7 +700,7 @@ int main()
 					// DBG skip unexplored nodes
 					if (curr.totalVisits < 3) continue;
 
-					if (!app.nodes[curr.parentNdx].expanded) continue;
+					if (!app.nodes[curr.parentNdx].ui_expanded) continue;
 
 					Rectangle rect;
 					rect.x = xval;
@@ -688,7 +711,7 @@ int main()
 					Vector2 mousePos = GetMousePosition();
 					Rectangle mouseRect = (Rectangle){ mousePos.x, mousePos.y, 1, 1 };
 					if (IsMouseButtonPressed(0) && CheckCollisionRecs( rect, mouseRect )) {
-						curr.expanded = !curr.expanded;
+						curr.ui_expanded = !curr.ui_expanded;
 					}
 
 					float ucb = NodeValUCB1( app, curr );

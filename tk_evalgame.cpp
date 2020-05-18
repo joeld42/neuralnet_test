@@ -3,20 +3,18 @@
 #include <stdlib.h>
 #include <math.h>
 
-// TODO LIST in order
-//
-// - Move TieToe game state somewhere, doesn't have to be genericized yet
-// - make LoadWeights a function pointer ot otherwise opaque
-// - Split out the TicToeGameState from the encosing GameState
-// - some way to GenPossibleMoves instead of assuming 9 board spaces
+#include "rnd.h"
+
+#define MAX_BRANCH (20)
 
 // TODO borrowing this from raylib -- reimplement
 extern "C" {
 int GetRandomValue( int minVal, int maxVal );
 }
 
+void CallGeneratePossibleMoves( GameAppInfo &app, const GameState &game, GameStateArray &moves );
 
-// ZARDOZ: make this support multi-player, this should be generic enough
+// TODO: make this support multi-player, this should be generic enough
 GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 {
 	// random for now
@@ -25,11 +23,11 @@ GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 	// Analysis pretty easy if somene won
 	if (game.gameResult == RESULT_WINNER)
 	{
-		if (game.winner == WINNER_X) {
+		if (game.winner == PLAYER_1) {
 			result.plr[0].win_chance = 1.0;
 			result.plr[1].win_chance = 0.0;
 			result.tie_chance = 0.0;
-		} else if (game.winner == WINNER_O) {
+		} else if (game.winner == PLAYER_2) {
 			result.plr[0].win_chance = 0.0;
 			result.plr[1].win_chance = 1.0;
 			result.tie_chance = 0.0;
@@ -38,23 +36,9 @@ GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 
 		result.tie_chance = 1.0;
 	} else {
-		// RESULT_IN_PROGRESS
-
-		// Test: random chance
-		//result.p0_win = (float)GetRandomValue(0,100) / 100.0f;
-		//result.p1_win = (float)GetRandomValue(0,100) / 100.0f;
-
-		// Use net to evaluate
-		// for (int i=0; i < 11; i++) {
-		// 	printf("LoadWeights: i %d is %3.2lf\n", i, app.inputs[i] );
-		// }
         assert (app.info.gameFunc_LoadWeights != NULL);
 		app.info.gameFunc_LoadWeights( game, app.inputs );
 		const double *outs = genann_run( app.net, app.inputs );
-		// double outs[2];
-
-		// outs[0] = (float)UniformRandom();
-		// outs[1] = (float)UniformRandom();
 
 		// also copy to app
 		app.outputs[0] = outs[0];
@@ -62,8 +46,6 @@ GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 		app.outputs[2] = outs[2];
 
 		// Normalize and store 
-		//float a = NormOutput(outs[0]);
-		//float b = NormOutput(outs[1]);
 		float a = outs[0];
 		float b = outs[1];
 		float c = outs[2];
@@ -75,8 +57,6 @@ GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 		result.plr[0].win_chance = a / total;
 		result.plr[1].win_chance = b / total;
 		result.tie_chance = c / total;
-		
-		
 	}
 	return result;
 }
@@ -87,6 +67,26 @@ int MakeNode( GameAppInfo &app )
     return app.numNodes++;
 }
 
+void AddChildNode( GameAppInfo &app, MCTSNode &curr, int childNdx )
+{
+    // Add a child if we don't have one
+    if (curr.leftChildNdx == 0) {
+        curr.leftChildNdx = childNdx;
+    } else {
+        int ndx = curr.leftChildNdx;
+        
+        while (1) {
+            MCTSNode &currChild = app.nodes[ndx];
+            ndx = currChild.rightSiblingNdx;
+            if (ndx == 0) {
+                currChild.rightSiblingNdx = childNdx;
+                break;
+            }
+        };
+    }
+    
+    // TODO: Add parent index here
+}
 
 float NodeValUCB1( GameAppInfo &app, MCTSNode &node )
 {
@@ -102,7 +102,7 @@ float NodeValUCB1( GameAppInfo &app, MCTSNode &node )
 	return exploitVal + exploreVal;
 }
 
-int RolloutOnce( GameState state, int player )
+int RolloutOnce( GameAppInfo &app, GameState state, int player )
 {
 	GameState curr = state;
     GameStateArray possibleMoves = {};
@@ -110,8 +110,8 @@ int RolloutOnce( GameState state, int player )
 		//int randMove = ChooseRandomMove( curr );
 		//curr = ApplyMove( curr, randMove );
         
-        GeneratePossibleMoves( curr, possibleMoves );
-        curr = ChooseRandomMove( possibleMoves );
+        CallGeneratePossibleMoves( app, curr, possibleMoves );
+        curr = ChooseRandomMove( app, possibleMoves );
 	}
     FreeArray( &possibleMoves );
     
@@ -148,7 +148,7 @@ int Rollout( GameAppInfo &app, GameState state, int runs, int player )
 			// Otherwise
 			int wins = 0;
 			for (int i=0; i < runs; i++) {
-				wins += RolloutOnce( state, player );
+				wins += RolloutOnce( app, state, player );
 			}
 			result = wins;
 
@@ -173,53 +173,22 @@ int Rollout( GameAppInfo &app, GameState state, int runs, int player )
 	return result;
 }
 
-#if 0
-// ZARDOZ: refactor the PossibleMoves thing to generate gamestates
-GameState ChooseRandomMove( const GameState &game )
+GameState ChooseRandomMove( GameAppInfo &app, GameStateArray &possibleMoves )
 {
-//	int possibleMoves[9];
-//	int numPossibleMoves = 0;
-//
-//	if (game.gameResult != RESULT_IN_PROGRESS) {
-//		return -1;
-//	}
-//
-//	for (int i=0; i < 9; i++) {
-//		if (game.gg.square[i] == SQUARE_BLANK) {
-//			possibleMoves[numPossibleMoves++] = i;
-//		}
-//	}
-    GameStateArray possibleMoves = GeneratePossibleMoves( game );
-
-	if (numPossibleMoves==0) {
-		return 0;
-	} else {
-		return possibleMoves[ GetRandomValue( 0, numPossibleMoves-1) ];
-	}
-}
-#endif
-
-GameState ChooseRandomMove( GameStateArray possibleMoves )
-{
+    
     assert( possibleMoves.size > 0);
     size_t moveNdx = GetRandomValue( 0, possibleMoves.size - 1);
-    return possibleMoves.data[moveNdx];
-}
-
-// Helper that generates the possible moves and picks one at random
-// Not efficient if you are choosing multiple moves
-GameState ChooseRandomMoveSimple( const GameState &prevState )
-{
-    GameState result = {};
-    GameStateArray possibleMoves= {};
-    GeneratePossibleMoves( prevState, possibleMoves );
-    if (possibleMoves.size > 0) {
-        result = ChooseRandomMove( possibleMoves );
-    }
+    GameState result = possibleMoves.data[moveNdx];
+    
+//    // Remove the chosen move from the list
+//    possibleMoves.data[moveNdx] = possibleMoves.data[possibleMoves.size - 1];
+//    possibleMoves.size -= 1;
+//
     return result;
 }
 
-void GeneratePossibleMoves( const GameState &game, GameStateArray &moves )
+
+void CallGeneratePossibleMoves( GameAppInfo &app, const GameState &game, GameStateArray &moves )
 {
     ClearArray( &moves );
     
@@ -227,19 +196,28 @@ void GeneratePossibleMoves( const GameState &game, GameStateArray &moves )
         return;
     }
     
-    for (int i=0; i < 9; i++) {
-        if (game.gg.square[i] == SQUARE_BLANK) {
-            GameState moveState = ApplyMove( game, i );
-            PushGameState( &moves, moveState );
-        }
-    }
+    // Call the client generator
+    assert( app.info.gameFunc_GeneratePossibleMoves != NULL );
+    app.info.gameFunc_GeneratePossibleMoves( game, moves );
 }
 
-// ZARDOZ: mostyl genericified, cleanup fallout from other change
-GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
+// Helper that generates the possible moves and picks one at random
+// Not efficient if you are choosing multiple moves
+GameState ChooseRandomMoveSimple( GameAppInfo &app, const GameState &prevState )
 {
-    GameState result = game;
-    
+    GameState result = {};
+    GameStateArray possibleMoves= {};
+    CallGeneratePossibleMoves( app, prevState, possibleMoves );
+    if (possibleMoves.size > 0) {
+        result = ChooseRandomMove( app, possibleMoves );
+    }
+    FreeArray( &possibleMoves );
+    return result;
+}
+
+
+GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
+{    
 	if (game.gameResult != RESULT_IN_PROGRESS) {
         return game;
 	}
@@ -254,6 +232,9 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
 	int rootNdx = MakeNode( app );
 	app.nodes[rootNdx].state = game;
 
+    // Temporary to hold potential moves
+    GameStateArray potentialMoves = {};
+    
 	int iter = 1000; 
 	while ((app.numNodes < NUM_MCTS_NODE-2) && (iter>0))
 	{
@@ -273,6 +254,8 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
 				isLeaf = true;
 				float bestScore = -999999.0f;
 				int bestChildNdx = 0;
+                
+                /*
 				for (int i=0; i < 9; i++) {
 					if (curr.childNdx[i] != 0) {
 						// This is a non-leaf node, potentially expand
@@ -285,6 +268,21 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
 						}
 					}
 				}
+                 */
+                if (curr.leftChildNdx==0) {
+                    isLeaf = true;
+                } else {
+                    int currChildNdx = curr.leftChildNdx;
+                    while (currChildNdx > 0) {
+                        MCTSNode &currChild = app.nodes[ currChildNdx ];
+                        float ucb = NodeValUCB1( app, currChild );
+                        if (ucb > bestScore) {
+                            bestScore = ucb;
+                            bestChildNdx = currChildNdx;
+                        }
+                        currChildNdx = currChild.rightSiblingNdx;
+                    }
+                }
 
 				if (!isLeaf) {
 					currNdx = bestChildNdx;
@@ -296,6 +294,7 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
 		}
 
 		// If this leaf has already been evaluated, expand it
+        int pickMoves[MAX_BRANCH];
 		int simNdx = 0;
 		if ((app.nodes[ currNdx ].totalVisits > 0) && (app.nodes[ currNdx ].state.gameResult == RESULT_IN_PROGRESS))
 		{
@@ -305,44 +304,37 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
 			if (curr.state.gameResult != RESULT_IN_PROGRESS) {
 				printf("Hmmm.. trying to expand a terminal\n");
 			}
+            
+            // Haven't expanded this node yet, generate the potential move list
+            CallGeneratePossibleMoves( app, curr.state, potentialMoves );
 
-			int cc = 0;
-			int pickMoves[9];
-			for (int i=0; i < 9; i++) {
-
-				// Is this a potential move that we haven't expanded yet?
-				if (curr.state.gg.square[i]==SQUARE_BLANK) {
-					GameState nextMove = ApplyMove( curr.state, i );
-                                            					
-					// Make a child node for it
-					int cndx = MakeNode( app );
-					MCTSNode &child = app.nodes[cndx];
-					curr.childNdx[i] = cndx;
-					child.state = nextMove;
-					child.parentNdx = currNdx;
-					child.moveNum = i;
-					pickMoves[cc++] = cndx;
-				}
-			}
-			
-			// shouldn't be exanding
-			assert( cc > 0 );
-
-			// Simulateion step
-			if (cc>0)
-			{
-				// Now simulate one of the newly added nodes
-				int pick = GetRandomValue( 0, cc-1 );
-				simNdx = curr.childNdx[pick];
-			} else {
-				// Use the current node?? I guess??
-				simNdx = currNdx;
-				printf("BAD??? Will sim current I guess\n");
-			}
+            for (int i=0; i < potentialMoves.size; i++) {
+                GameState nextMove = potentialMoves.data[i];
+                
+                // Make a child node for it
+                int cndx = MakeNode( app );
+                MCTSNode &child = app.nodes[cndx];
+                child.state = nextMove;
+                child.parentNdx = currNdx;
+                child.moveNum = i;
+                pickMoves[i] = cndx;
+                
+                AddChildNode( app, curr, cndx );
+            }
+            
+            if (potentialMoves.size > 0) {
+                // Now simulate one of the newly added nodes
+                int pick = GetRandomValue( 0, potentialMoves.size-1 );
+                simNdx = pickMoves[pick];
+            } else {
+               // Use the current node?? I guess??
+                simNdx = currNdx;
+                printf("BAD??? Will sim current I guess\n");
+            }            
 		} else {
 			simNdx = currNdx;
 		}
-		
+        
 		// Rollout, sim the node		
 		int numRuns = 25;
 		MCTSNode &sim = app.nodes[ simNdx ];
@@ -371,18 +363,19 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
 	int bestMoveNum = -1;
 	int bestMoveNdx = 0;
 	MCTSNode &root = app.nodes[rootNdx];
-	for (int i=0; i < 9; i++) {
-		if (root.childNdx[i] > 0) {
-			MCTSNode &child = app.nodes[root.childNdx[i]];
-			if (child.totalVisits > 0) {
-				float val = child.totalWins / child.totalVisits;
-				if (val > bestMoveVal) {
-					bestMoveVal = val;
-					bestMoveNum = child.moveNum;
-					bestMoveNdx = root.childNdx[i];
-				}
-			} 
-		}
+    
+    int childNdx = root.leftChildNdx;
+	while (childNdx != 0) {
+        MCTSNode &child = app.nodes[childNdx];
+        if (child.totalVisits > 0) {
+            float val = child.totalWins / child.totalVisits;
+            if (val > bestMoveVal) {
+                bestMoveVal = val;
+                bestMoveNum = child.moveNum;
+                bestMoveNdx = childNdx;
+            }
+        }
+        childNdx = child.rightSiblingNdx;
 	}
 	
 	app.nodes[bestMoveNdx].selected = true;
@@ -404,12 +397,12 @@ void TrainHistory( GameAppInfo &app )
     
     assert( gameEnd.gameResult != RESULT_IN_PROGRESS );
     
-	if ((gameEnd.gameResult == RESULT_WINNER) && (gameEnd.winner == WINNER_X)) {
+	if ((gameEnd.gameResult == RESULT_WINNER) && (gameEnd.winner == PLAYER_1)) {
 		app.outputs[0] = 1.0f;
 		app.outputs[1] = 0.0f;
 		app.outputs[2] = 0.0f; // tie
 		app.winXcount++;
-    } else if ((gameEnd.gameResult == RESULT_WINNER) && (gameEnd.winner == WINNER_O)) {
+    } else if ((gameEnd.gameResult == RESULT_WINNER) && (gameEnd.winner == PLAYER_2)) {
 		app.outputs[0] = 0.0f;
 		app.outputs[1] = 1.0f;
 		app.outputs[2] = 0.0f; // tie
@@ -432,7 +425,7 @@ void TrainHistory( GameAppInfo &app )
 	app.gameCount++;
 }
 
-// ZARDOZ: clean up winner stuff. Might not want to train on
+// TODO: clean up winner stuff. Might not want to train on
 // move history anyways, but instead on the result of TreeSearch
 void TrainOneStep( GameAppInfo &app, float temperature )
 {
@@ -449,7 +442,7 @@ void TrainOneStep( GameAppInfo &app, float temperature )
 			//aiMove = ChooseBestMove( app, app.gameHistory[app.currMove] );
 			aiMove = TreeSearchMove( app, app.gameHistory[app.currMove] );
 		} else {
-			aiMove = ChooseRandomMoveSimple(  app.gameHistory[app.currMove] );
+			aiMove = ChooseRandomMoveSimple( app, app.gameHistory[app.currMove] );
 		}
 		
         int nextMove = app.currMove+1;
@@ -493,7 +486,7 @@ void GameInit( GameAppInfo &app )
 // -------------------------------------------
 //  Utilities
 // -------------------------------------------
-// ZARDOZ: use a different random state thing.
+// TODO: use a different random state thing.
 float UniformRandom()
 {
 	return (float)rand() / (float)RAND_MAX;
