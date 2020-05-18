@@ -114,7 +114,7 @@ void PushGameState( GameStateArray *games, GameState state );
 void FreeArray( GameStateArray *games );
 void ClearArray( GameStateArray *games );
 
-#define NUM_MCTS_NODE (5000)
+#define NUM_MCTS_NODE (10000)
 
 struct MCTSNode
 {
@@ -169,8 +169,6 @@ struct GameAppInfo
 
     MCTSNode *nodes;
     int numNodes;
-    
-    GameAnalysis preview[9]; // preview for all squares
 };
 
 

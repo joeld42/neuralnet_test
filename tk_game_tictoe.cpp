@@ -20,6 +20,7 @@ GameState ApplyMove( GameState prevState, int moveLoc );
 
 // TODO: move these somewhere
 Rectangle g_screenRect[9];
+GameAnalysis g_preview[9];
 
 bool _CheckThree( GameState &game, int a, int b, int c )
 {
@@ -192,7 +193,7 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 				g_screenRect[sqNdx] = subRect;
 			
 				if (showPreview) {
-					GameAnalysis &ga = app->preview[sqNdx];
+					GameAnalysis &ga = g_preview[sqNdx];
 					if ((ga.plr[0].win_chance > 0.0) || (ga.plr[1].win_chance > 0.0)) {
 						Color sqCol = GetWinColor( state.gameResult, state.winner,
                                     ga.plr[0].win_chance, ga.plr[1].win_chance, ga.tie_chance );
@@ -302,10 +303,10 @@ int PreviewBestMove( GameAppInfo &app, const GameState &game )
 			GameAnalysis ga = AnalyzeGame( app, evalGame );
 			
 
-			app.preview[i] = ga;
+			g_preview[i] = ga;
 			
 		} else {
-			app.preview[i] = (GameAnalysis){};
+			g_preview[i] = (GameAnalysis){};
 		}
 	}
 
@@ -552,10 +553,10 @@ int main()
 				for (int i=0; i < 9; i++) {
 					printf("Square %d: X %3.2f, O %3.2f (sum %3.2f)\n", 
 						i, 
-						app.preview[i].plr[0].win_chance,
-						app.preview[i].plr[1].win_chance,
+						g_preview[i].plr[0].win_chance,
+						g_preview[i].plr[1].win_chance,
 
-						app.preview[i].plr[0].win_chance + app.preview[i].plr[1].win_chance  );
+						g_preview[i].plr[0].win_chance + g_preview[i].plr[1].win_chance  );
 				}
 			}
 

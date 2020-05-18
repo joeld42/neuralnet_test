@@ -64,6 +64,7 @@ GameAnalysis AnalyzeGame( GameAppInfo &app, GameState game )
 // This assumes all the nodes get zeroed out
 int MakeNode( GameAppInfo &app )
 {
+    assert( app.numNodes < NUM_MCTS_NODE );
     return app.numNodes++;
 }
 
@@ -231,7 +232,7 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
     // Temporary to hold potential moves
     GameStateArray potentialMoves = {};
     
-	int iter = 1000; 
+	int iter = 5000; 
 	while ((app.numNodes < NUM_MCTS_NODE-2) && (iter>0))
 	{
 		//printf("\nTree search %d iters left, %d nodes....\n", iter, app.numNodes);
@@ -247,7 +248,7 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
 			if (curr.state.gameResult == RESULT_IN_PROGRESS)
 			{
 				// find the child with the best UCB 
-				isLeaf = true;
+				isLeaf = false;
 				float bestScore = -999999.0f;
 				int bestChildNdx = 0;
                 
@@ -282,6 +283,7 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
 		{
 			// Expand the possible moves from best child
 			MCTSNode &curr = app.nodes[currNdx];
+//            printf("Expanding node %d\n", currNdx );
 
 			if (curr.state.gameResult != RESULT_IN_PROGRESS) {
 				printf("Hmmm.. trying to expand a terminal\n");
@@ -314,6 +316,7 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
                 printf("BAD??? Will sim current I guess\n");
             }
 		} else {
+            //printf("Simulating node %d\n", currNdx );
 			simNdx = currNdx;
 		}
         
