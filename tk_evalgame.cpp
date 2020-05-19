@@ -292,6 +292,12 @@ GameState TreeSearchMove( GameAppInfo &app, const GameState &game )
             // Haven't expanded this node yet, generate the potential move list
             CallGeneratePossibleMoves( app, curr.state, potentialMoves );
 
+            // truncate the potential moves if too many
+            if (potentialMoves.size >= MAX_BRANCH) {
+                printf("WARN: too much branching, increase MAX_BRANCH\n");
+                potentialMoves.size = MAX_BRANCH-1;
+            }
+            
             for (int i=0; i < potentialMoves.size; i++) {
                 GameState nextMove = potentialMoves.data[i];
                 

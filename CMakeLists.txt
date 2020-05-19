@@ -41,8 +41,11 @@ add_executable (tk_game_tictoe
 
 				tk_game_tictoe.cpp
 				
-				tk_evalgame.cpp
 				tk_evalgame.h
+				tk_evalgame.cpp
+
+				tk_game_ui.h
+				tk_game_ui.cpp
 
 				genann.cpp
 				)

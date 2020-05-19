@@ -11,6 +11,7 @@
 #include "genann.h"
 
 #include "tk_evalgame.h"
+#include "tk_game_ui.h"
 
 #define  RND_IMPLEMENTATION
 #include "rnd.h"
@@ -36,7 +37,6 @@ bool _CheckThree( GameState &game, int a, int b, int c )
 
     return false;
 }
-
 
 //
 // Returns BLANK, X, or O depending on who won
@@ -87,71 +87,6 @@ GameState CheckWinner( GameState game )
 }
 
 
-float Lerp( float a, float b, float t)
-{
-	return (a*(1.0-t)) + (b*t);
-}
-
-Color LerpColor( Color a, Color b, float t)
-{
-	Color result;
-	result.r = (int)Lerp( (float)a.r, (float)b.r, t );
-	result.g = (int)Lerp( (float)a.g, (float)b.g, t );
-	result.b = (int)Lerp( (float)a.b, (float)b.b, t );
-	result.a = (int)Lerp( (float)a.a, (float)b.a, t );
-	return result;
-}
-
-
-struct DbgTreeRect
-{
-	Rectangle rect;
-	int nodeNdx;
-};
-
-
-
-float min_float( float a, float b )
-{
-	if ( a < b) return a;
-	else return b;
-}
-
-
-Color GetWinColor( int result, int winner, float x_win_chance, float o_win_chance, float tie_chance )
-{
-	Color win_c = WHITE;
-	Color winCol_O = (Color){ 200,200,255,255 };
-	Color winCol_X = (Color){ 255,200,200,255 };
-	Color tieCol = (Color){ 200,255,200,255 };
-
-	if (result == RESULT_WINNER)
-	{
-		if (winner == PLAYER_2) {
-			win_c = winCol_O;
-		} else if (winner == PLAYER_1) {
-			win_c = winCol_X;
-		}
-	} else {
-		// no winner yet, color by chance of winner
-
-		if ((x_win_chance > o_win_chance) && (x_win_chance > tie_chance)) {
-			return LerpColor( WHITE, winCol_X, x_win_chance );
-		} else if ((o_win_chance > x_win_chance) && (o_win_chance > tie_chance)) {
-			return LerpColor( WHITE, winCol_X, o_win_chance );
-		} else // tie chance
-		{
-			return LerpColor( WHITE, tieCol, tie_chance );
-		}
-
-		//win_c = (Color){  128 + (uint8_t)(x_win_chance*128), 200, 128 + (uint8_t)(x_win_chance*128), 255 };
-		//win_c.r = 200 + (uint8_t)(x_win_chance*55.0f);		
-		//win_c.b = 200 + (uint8_t)(o_win_chance*55.0f);
-		//win_c.g = (win_c.r + win_c.b) / 2;
-		//win_c.g = 0;
-	}
-	return win_c;
-}
 
 void DrawBoard( Rectangle outer_rect, GameState state, 
 				float x_win_chance, float o_win_chance, float tie_chance,
@@ -254,13 +189,6 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 GameState RandomBoard( GameAppInfo &app )
 {
 	GameState game = {};
-	int moves[9] = { 0,1,2,3,4,5,6,7,8 };
-	for (int i=8; i > 0; i--) {
-		int n = GetRandomValue( 0, i );
-		int t = moves[n];
-		moves[n] = moves[i];
-		moves[i] = t;
-	}	
 
 	int numMoves = GetRandomValue( 0, 8 );
 	for (int i=0; i < numMoves; i++ )
@@ -359,7 +287,6 @@ int ChooseBestMove( GameAppInfo &app, const GameState &game )
 	return bestMove;
 }
 
-// make this a callback from the eval game
 void LoadWeights_TicToe( GameState &state, double *inputs )
 {
     // one weight per sqaure
