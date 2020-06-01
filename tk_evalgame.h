@@ -114,6 +114,7 @@ void PushGameState( GameStateArray *games, GameState state );
 void FreeArray( GameStateArray *games );
 void ClearArray( GameStateArray *games );
 
+
 #define NUM_MCTS_NODE (10000)
 
 struct MCTSNode
@@ -136,20 +137,12 @@ struct MCTSNode
     bool ui_expanded;
 };
 
-
-enum {
-	MODE_PLAY,
-	MODE_GALLERY,
-	MODE_TREE,
-
-	NUM_MODES
-};
-
 struct GameAppInfo
 {
-	int mode = MODE_PLAY;
 	int currMove;
     GameInfo info;
+    
+    // Move to GameUI
     GameState gameHistory[10];
     GameAnalysis gameHistory_A[10];
 

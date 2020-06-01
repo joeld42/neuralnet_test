@@ -19,9 +19,7 @@
 void GeneratePossibleMoves_TicToe( const GameState &game, GameStateArray &moves );
 GameState ApplyMove( GameState prevState, int moveLoc );
 
-// TODO: move these somewhere
-Rectangle g_screenRect[9];
-GameAnalysis g_preview[9];
+GameAnalysis NEUTRAL_ANALYSIS = {};
 
 bool _CheckThree( GameState &game, int a, int b, int c )
 {
@@ -87,10 +85,9 @@ GameState CheckWinner( GameState game )
 }
 
 
-
 void DrawBoard( Rectangle outer_rect, GameState state, 
-				float x_win_chance, float o_win_chance, float tie_chance,
-				GameAppInfo *app, bool showPreview )
+				GameAnalysis ga, GameUIStuff *gameUI,
+               bool showPreview )
 {
 	// Find the best-fit square inside rect
 
@@ -107,7 +104,7 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 	rect.width = sz;
 	rect.height = sz;
 
-	Color win_c = GetWinColor( state.gameResult, state.winner, x_win_chance, o_win_chance, tie_chance );
+	Color win_c = GetWinColor( state.gameResult, state.winner, ga.plr[0].win_chance, ga.plr[1].win_chance, ga.tie_chance );
 	//Color win_c = { (uint8_t)(x_win_chance*255), 255, (uint8_t)(o_win_chance*255), 255 };	
 
 	DrawRectangle( rect.x, rect.y, rect.width, rect.height, win_c );
@@ -124,18 +121,18 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 								  rect.y + rectSz3 * j,
 								  rectSz3, rectSz3 };
 
-			if (app) {
-				g_screenRect[sqNdx] = subRect;
+//			if (gameUI) {
+//				gameUI->screenRect[sqNdx] = subRect;
 			
-				if (showPreview) {
-					GameAnalysis &ga = g_preview[sqNdx];
-					if ((ga.plr[0].win_chance > 0.0) || (ga.plr[1].win_chance > 0.0)) {
-						Color sqCol = GetWinColor( state.gameResult, state.winner,
-                                    ga.plr[0].win_chance, ga.plr[1].win_chance, ga.tie_chance );
-						DrawRectangleRec( subRect, sqCol );
-					}
-				}
-			}
+//				if (showPreview) {
+//					GameAnalysis &ga = gameUI->preview[sqNdx];
+//					if ((ga.plr[0].win_chance > 0.0) || (ga.plr[1].win_chance > 0.0)) {
+//						Color sqCol = GetWinColor( state.gameResult, state.winner,
+//                                    ga.plr[0].win_chance, ga.plr[1].win_chance, ga.tie_chance );
+//						DrawRectangleRec( subRect, sqCol );
+//					}
+//				}
+//			}
 
 			rad = subRect.width * 0.5f;
 			if (state.gg.square[sqNdx] == SQUARE_O) {
@@ -215,78 +212,6 @@ void ResetGallery( GameAppInfo &app )
 	}
 }
 
-
-
-int PreviewBestMove( GameAppInfo &app, const GameState &game )
-{
-	if (game.gameResult != RESULT_IN_PROGRESS) {
-		printf("preview best: game already over\n");
-		return -1;
-	}
-
-	int bestMove = -1;
-	for (int i=0; i < 9; i++) {
-		if (game.gg.square[i] == SQUARE_BLANK) {
-			GameState evalGame = ApplyMove(game,  i );
-			GameAnalysis ga = AnalyzeGame( app, evalGame );
-			
-
-			g_preview[i] = ga;
-			
-		} else {
-			g_preview[i] = (GameAnalysis){};
-		}
-	}
-
-	return bestMove;
-}
-
-
-
-int ChooseBestMove( GameAppInfo &app, const GameState &game )
-{
-	if (game.gameResult != RESULT_IN_PROGRESS) {
-		return -1;
-	}
-
-	int bestMove = -1;
-	float bestMoveDiff = -1.0f;
-    
-    GameStateArray possibleMoves = {};
-    GeneratePossibleMoves_TicToe( game, possibleMoves );
-    
-    
-
-	for (int i=0; i < 9; i++) {
-		if (game.gg.square[i] == SQUARE_BLANK) {
-			GameState evalGame = ApplyMove(game,  i );
-			GameAnalysis ga = AnalyzeGame( app, evalGame );
-			
-			float my_win, other_win;
-			if (game.to_move == SQUARE_X) {
-				my_win = ga.plr[0].win_chance;
-				other_win = ga.plr[1].win_chance;
-			}
-			else if (game.to_move == SQUARE_O) {
-				my_win = ga.plr[1].win_chance;
-				other_win = ga.plr[0].win_chance;
-            } else {
-                assert(0); // unreachable
-                my_win = 0.0f;
-                other_win = 0.0f;
-            }
-
-			float moveDiff = my_win - other_win;
-			if (moveDiff > bestMoveDiff) {				
-				bestMoveDiff = moveDiff;					
-				bestMove = i;
-			}
-		}
-	}
-
-	return bestMove;
-}
-
 void LoadWeights_TicToe( GameState &state, double *inputs )
 {
     // one weight per sqaure
@@ -351,24 +276,23 @@ int main()
     SetExitKey(0);
     SetTargetFPS(30);
 
-    GameAppInfo app = {};
+    GameUIStuff gameUI = {};    
+    
     
     // Set up the metadata for the game
-    app.info.minPlayerCount = 2;
-    app.info.maxPlayerCount = 2;
-    app.info.net_inputs = 11;
-    app.info.net_hidden_layers = 3;
-    app.info.net_hidden_layer_size = 64;
+    SetupNeutralAnalysis( NEUTRAL_ANALYSIS );
+    gameUI.app.info.minPlayerCount = 2;
+    gameUI.app.info.maxPlayerCount = 2;
+    gameUI.app.info.net_inputs = 11;
+    gameUI.app.info.net_hidden_layers = 3;
+    gameUI.app.info.net_hidden_layer_size = 64;
     
-    app.info.gameFunc_LoadWeights = LoadWeights_TicToe;
-    app.info.gameFunc_GeneratePossibleMoves = GeneratePossibleMoves_TicToe;
+    gameUI.app.info.gameFunc_LoadWeights = LoadWeights_TicToe;
+    gameUI.app.info.gameFunc_GeneratePossibleMoves = GeneratePossibleMoves_TicToe;
 
-    GameInit( app );
+    GameInit( gameUI.app );
         
     //ResetGallery( app );
-
-    int autoTrain = 0;
-    float temperature = 0.0;
 
     // Main game loop
     while (!exitWindow)    // Detect window close button or ESC key
@@ -381,321 +305,13 @@ int main()
 
 		ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)));
 
-		if (IsKeyPressed( KEY_TAB )) {
+        GameUI_DoCommonUI( gameUI );
 
-			app.mode++;
-			if (app.mode == NUM_MODES) {
-				app.mode = MODE_PLAY;
-			}
-		}
-
-		 //DrawText( "Hello There", 200, 80, 20, RED);
-		if (app.mode==MODE_PLAY) {
-
-			if (IsKeyPressed(KEY_R)) {
-				// reset game
-				app.currMove = 0;
-				app.gameHistory[0] = (GameState){};
-				app.gameHistory[0].to_move = SQUARE_X;
-
-				PreviewBestMove( app, app.gameHistory[app.currMove] );
-			}
-
-			if (IsKeyPressed(KEY_A) && (!autoTrain) ) {
-				// Do AI move
-				int aiMove = ChooseBestMove( app, app.gameHistory[app.currMove] );
-				if (aiMove < 0) {
-					printf("No valid moves.\n");
-				} else {
-					printf("AI move on square %d\n", aiMove );
-					int nextMove = app.currMove+1;
-					app.gameHistory[nextMove] = ApplyMove( app.gameHistory[app.currMove], aiMove );
-					app.currMove = nextMove;
-
-					PreviewBestMove( app, app.gameHistory[app.currMove] );
-				}
-			}
-
-			if (IsKeyPressed(KEY_S)) {
-				// Tree search
-				printf("Tree search....\n");
-                GameState currMove = app.gameHistory[app.currMove];
-				GameState aiMove = TreeSearchMove( app, currMove );
-				if (aiMove.gg.lastMove == currMove.gg.lastMove ) {
-					printf("No valid moves.\n");
-				} else {
-					printf("AI move on square %d\n", aiMove.gg.lastMove );
-					int nextMove = app.currMove+1;
-                    app.gameHistory[nextMove] = aiMove;
-					app.currMove = nextMove;
-				}
-			}
-
-			if (IsKeyPressed(KEY_T)) {
-				if (app.gameHistory[app.currMove].gameResult == RESULT_IN_PROGRESS) {
-					printf("Can't train, game is not finished.\n");
-				} else {
-					printf("Train on this game.\n");
-					TrainHistory( app );					
-				}
-			}
-
-			if (IsKeyPressed(KEY_M)) {
-				if (autoTrain) {
-					autoTrain = 0;
-				} else {
-					autoTrain = 1;
-				}
-			}
-
-			if (IsKeyPressed(KEY_N)) {
-				if (autoTrain) {
-					autoTrain = 0;
-				} else {
-					autoTrain = 500;
-				}
-			}
-
-			if (IsKeyPressed(KEY_B)) {
-				autoTrain = 1000;
-			}
-
-			if (IsKeyPressed(KEY_L)) {
-				app.simMode++;
-				if (app.simMode == NUM_SIM_MODES) {
-					app.simMode = 0;
-				}
-			}
-
-			if (IsKeyPressed(KEY_T)) {
-			}
-
-			if (IsKeyPressed(KEY_P)) {
-				// print weights
-				printf("Inputs: ");
-				for (int i=0; i < 11; i++) {
-					printf("%3.2lf ", app.inputs[i] );
-				}
-				printf("\nOutputs: %3.2lf %3.2lf\n", app.outputs[0], app.outputs[1] );
-				for (int i=0; i < 9; i++) {
-					printf("Square %d: X %3.2f, O %3.2f (sum %3.2f)\n", 
-						i, 
-						g_preview[i].plr[0].win_chance,
-						g_preview[i].plr[1].win_chance,
-
-						g_preview[i].plr[0].win_chance + g_preview[i].plr[1].win_chance  );
-				}
-			}
-
-			if (autoTrain)
-			{
-				for (int s=0; s < autoTrain; s++)
-				{
-					TrainOneStep( app, temperature );
-					if (((s % 100) == 0) && (s>0)) {
-						printf("train %d\n", s );
-					}
-				}
-
-				// Don't train continously for 
-				if (autoTrain > 999) {
-					autoTrain = 0;
-					printf("phew\n");
-				}
-
-			} else {
-				// Manual play mode
-
-				// If the game is not over, allow moves
-				if (app.gameHistory[app.currMove].gameResult == RESULT_IN_PROGRESS)
-				{
-					if (IsMouseButtonPressed(0)) {				
-						// check if we're in a game space
-						Vector2 mousePos = GetMousePosition();
-						Rectangle mouseRect = (Rectangle){ mousePos.x, mousePos.y, 1, 1 };
-						for (int i=0; i < 9; i++) {						
-							if (app.gameHistory[app.currMove].gg.square[i]!=SQUARE_BLANK) {
-								// Square is occupied
-								printf("Square is occupied.\n");
-							} else if (CheckCollisionRecs( g_screenRect[i], mouseRect )) {
-
-								printf("Clicked on square %d\n", i );
-								int nextMove = app.currMove+1;
-								app.gameHistory[nextMove] = ApplyMove( app.gameHistory[app.currMove], i );
-								app.currMove = nextMove;
-
-								PreviewBestMove( app, app.gameHistory[app.currMove] );
-
-								break;
-							}
-						}				
-					}
-				}
-			}
-
-			Rectangle gameRect = { 100, 100, 500, 300 };
-
-			GameAnalysis analysis = AnalyzeGame( app, app.gameHistory[ app.currMove] );
-
-			DrawText( app.simMode==SIM_RANDOM?"Rand":"Eval", 600, 10, 20, BLACK);
-
-			int promptx = 150;
-			int prompty = 50;
-			GameState &game = app.gameHistory[ app.currMove];
-			if (game.gameResult == RESULT_TIE_GAME) {
-				DrawText( "Tie Game", promptx, prompty, 20, ORANGE );
-			} else if ((game.gameResult == RESULT_WINNER) && (game.winner == PLAYER_1)) {
-				DrawText( "Winner is X", promptx, prompty, 20, RED);
-			} else if ((game.gameResult == RESULT_WINNER) && (game.winner == PLAYER_2)) {
-				DrawText( "Winner is O", promptx, prompty, 20, BLUE);
-			} else if (game.to_move == SQUARE_X) {
-				DrawText( "X to Move", promptx, prompty, 20, RED);
-			} else if (game.to_move == SQUARE_O) {
-				DrawText( "O to Move", promptx, prompty, 20, BLUE);
-			}
-			char buff[20];
-			sprintf( buff, "%d trains (%d games)", app.trainCount, app.gameCount );
-			DrawText( buff, promptx, 400, 20, ORANGE );
-
-			sprintf( buff, "X %d / O %d / Tie %d\n",
-				app.winXcount,
-				app.winOcount,
-				app.tieCount );
-			DrawText( buff, promptx, 422, 20, ORANGE );
-
-			DrawBoard( gameRect, game, 
-				analysis.plr[0].win_chance, analysis.plr[1].win_chance, analysis.tie_chance,
-				&app, true  );
-
-			temperature = GuiSlider((Rectangle){ 150, 450, 165, 20 }, 
-				"Temperature", TextFormat("%0.3f", temperature) , temperature, 0.0, 1.0);
-
-			DrawText( TextFormat("X: %3.2f O: %3.2f Tie: %3.2f", 
-				analysis.plr[1].win_chance, analysis.plr[1].win_chance, analysis.tie_chance ),
-				150, 480, 20, BLUE );
-
-			// Show history too
-			for (int i=0; i <= app.currMove; i++) {
-
-				Rectangle boardRect = { 550, 10, 40, 40 };
-				boardRect.y += i*45;
-				DrawBoard( boardRect, app.gameHistory[i], 0.5f, 0.5f, 0.0f, NULL, false );
-			}
-
-
-
-
-		} else if (app.mode==MODE_GALLERY) {
-
-			if (IsKeyPressed(KEY_R)) {
-				// reset game
-				ResetGallery( app );
-			}
-			
-			for (int j=0; j < 10; j++ ) {
-				for (int i=0; i < 10; i++) {
-
-					int ndx = j*10+i;
-					DrawBoard ( 
-						(Rectangle){ (690.f-560.f)*0.5f+ 10.f + (56.f*i), 5 + (56.f*j), 50, 50 }, 
-						app.gridBoards[ndx], 
-						app.gridBoards_A[ndx].plr[0].win_chance,
-						app.gridBoards_A[ndx].plr[1].win_chance, 
-						app.gridBoards_A[ndx].tie_chance, 
-						NULL, false );
-				}
-			}
+        if (IsKeyPressed(KEY_R)) {
+            // reset game
+            ResetGallery( gameUI.app );
+        }
 		
-		} else if (app.mode==MODE_TREE) {
-
-			for (int ndx=0; ndx < app.numNodes; ndx++) {
-				MCTSNode &curr = app.nodes[ndx];
-				
-				if (ndx != 0) {
-					curr.level = app.nodes[curr.parentNdx].level + 1;					
-				}			
-			}
-
-			int rowHite = 85;
-			app.nodes[0].ui_expanded = true;
-			for (int level=0; level < 6; level++) {
-				float xval = 10.0f;
-
-				for (int ndx=0; ndx < app.numNodes; ndx++) {
-					MCTSNode &curr = app.nodes[ndx];
-					if (curr.level != level) continue;
-
-					// DBG skip unexplored nodes
-					if (curr.totalVisits < 3) continue;
-
-					if (!app.nodes[curr.parentNdx].ui_expanded) continue;
-
-					Rectangle rect;
-					rect.x = xval;
-					rect.y = 10 + rowHite * level;
-					rect.width = 50;
-					rect.height = 50;
-
-					Vector2 mousePos = GetMousePosition();
-					Rectangle mouseRect = (Rectangle){ mousePos.x, mousePos.y, 1, 1 };
-					if (IsMouseButtonPressed(0) && CheckCollisionRecs( rect, mouseRect )) {
-						curr.ui_expanded = !curr.ui_expanded;
-					}
-
-					float ucb = NodeValUCB1( app, curr );
-
-					curr.xval = rect.x + (rect.width/2.0f);
-					if (level >0) {
-						float lasty = 10 + rowHite * (level-1);
-						MCTSNode &parent = app.nodes[curr.parentNdx];
-						DrawLineEx( (Vector2){ rect.x + rect.width/2, rect.y + rect.height/2 },
-									(Vector2){ (float)(parent.xval), lasty + rect.height/2 },
-									2, GRAY );
-					}
-
-
-					if (curr.selected)
-					{
-						DrawRectangleRec( rect, GREEN );
-					} else {
-						DrawRectangleRec( rect, ORANGE );
-					}
-
-					Rectangle boardRect = rect;
-					boardRect.y += 15;
-					boardRect.height -= 16;
-					DrawBoard( boardRect, curr.state, 0.5f, 0.5f, 0.0f, NULL, false );
-
-					if (curr.totalVisits==0) {
-						DrawText( "UnVis",rect.x + 2, rect.y+2, 12, BLACK );	
-					} else {
-						DrawText( TextFormat("%d", (int)curr.totalVisits ),				
-							rect.x+2, rect.y+2, 12, BLACK );
-
-						DrawText( TextFormat("%d/%d", 
-							(int)curr.totalWins, (int)curr.totalVisits),
-							rect.x+2, rect.y+rect.height, 12, BLACK );
-
-						DrawText( TextFormat("(%3.1f) %3.2f", 
-							curr.totalWins / curr.totalVisits, ucb ),
-							rect.x+2, rect.y+rect.height+13, 12, BLACK );
-					}
-					// if (ucb > 9999.0) {							
-					// 	DrawText( "INF",rect.x + 2, rect.y+2, 12, BLACK );
-					// } else {										
-					// 	DrawText( TextFormat("%3.1f", ucb ),				
-					// 		rect.x+2, rect.y+2, 12, BLACK );
-					// }
-					
-
-					//xval += rect.width + 10;
-					xval += rect.width * 1.5;
-					// if (xval > 500) break;
-				}
-			}
-
-
-		}
  
         EndDrawing();
 	}
