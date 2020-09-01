@@ -10,8 +10,10 @@
 
 extern GameAnalysis NEUTRAL_ANALYSIS;
 
+// Don't forget to add new modes in tk_game_ui.cpp
 enum {
     MODE_PLAY,
+    MODE_STEP,
     MODE_GALLERY,
     MODE_TREE,
 
@@ -19,10 +21,12 @@ enum {
 };
 
 
+
 // -- misc utilities
 float min_float( float a, float b );
 float Lerp( float a, float b, float t);
 Color LerpColor( Color a, Color b, float t);
+Rectangle FitSquareInRect( Rectangle outer_rect );
 
 // Game display stuff
 Color GetWinColor( int result, int winner, float x_win_chance, float o_win_chance, float tie_chance );

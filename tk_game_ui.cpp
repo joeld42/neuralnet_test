@@ -9,6 +9,11 @@
 #include "tk_game_ui.h"
 #include "tk_evalgame.h"
 
+static const char *_mode_name[NUM_MODES] =
+{
+    "Play", "Step", "Gallery", "Tree"
+};
+
 Vector2 Gui_MakeVec2( float x, float y )
 {
     Vector2 result = {};
@@ -36,6 +41,20 @@ float min_float( float a, float b )
 {
     if ( a < b) return a;
     else return b;
+}
+
+Rectangle FitSquareInRect( Rectangle outer_rect )
+{
+    float sz = min_float( outer_rect.width, outer_rect.height );
+    float hmarg = (outer_rect.width - sz) / 2.0;
+    float vmarg = (outer_rect.height - sz ) /2.0;
+    Rectangle rect = {};
+    rect.x = outer_rect.x + hmarg;
+    rect.y = outer_rect.y + vmarg;
+    rect.width = sz;
+    rect.height = sz;
+    
+    return rect;
 }
 
 // FIXME: Change to take a GameAnalysis
@@ -359,6 +378,76 @@ void GameUI_DrawGameMode( GameUIStuff &gameUI )
 
 }
 
+void GameUI_ShowModeName( GameUIStuff &gameUI )
+{
+    char modeStr[50];
+    strcpy( modeStr, _mode_name[gameUI.mode] );
+
+    DrawText( modeStr, 20, 520, 20, RED);
+
+}
+
+// Draws a box with an X in it for placement
+void DrawPlacementBox( Rectangle rect, Color color )
+{
+    DrawRectangleLinesEx( rect, 2, color );
+    DrawLine( rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, color );
+    DrawLine( rect.x + rect.width, rect.y, rect.x, rect.y + rect.height, color );
+
+}
+
+void DrawBoardFake( Rectangle outer_rect )
+{
+    Rectangle rect = FitSquareInRect( outer_rect );
+    
+    Color lightOrange = (Color){ 255, 200, 100, 255 };
+    DrawRectangleLinesEx( outer_rect, 2, lightOrange );
+    DrawPlacementBox( rect, (Color)ORANGE );
+}
+
+void GameUI_DrawStepMode( GameUIStuff &gameUI )
+{
+    Rectangle gameRect = { 0, 10, 690, 300 };
+
+    GameAnalysis analysis = AnalyzeGame( gameUI.app, GameUI_CurrMove(gameUI ) );
+    GameState &game = GameUI_CurrMoveRef( gameUI );
+    
+    //DrawBoard( gameRect, game, analysis, &gameUI, true  );
+    DrawBoardFake( gameRect );
+    
+    // Now draw boards for all the possible moves
+    int moveRows = 2;
+    int moveCols = 6;
+    int showNumMoves = moveCols * moveRows;
+    float thumbWidth = gameRect.width / moveCols;
+    float moveStartY = gameRect.y + gameRect.height;
+    float thumbHite = (570 - moveStartY) / moveRows;
+    
+    int numMoves = gameUI.numPotentialMoves;
+    if (numMoves > showNumMoves) {
+        numMoves = showNumMoves;
+    }
+    for (int i=0; i < numMoves; i++)
+    {
+        int ii = i % moveCols;
+        int jj = i / moveCols;
+        Rectangle moveRect = {};
+        moveRect.x = ii * thumbWidth;
+        moveRect.y = (jj * thumbHite) + moveStartY;
+        moveRect.width = thumbWidth;
+        moveRect.height = thumbHite;
+        DrawBoardFake( moveRect );
+        
+        char moveN[10];
+        sprintf( moveN, "%d", i );
+        DrawText( moveN, moveRect.x, moveRect.y, 20, (Color)RED );
+    }
+    
+    if (gameUI.numPotentialMoves > showNumMoves) {
+        DrawText( "More Moves Not Shown", 400, 590, 12, (Color)RED );
+    }
+}
+
 void GameUI_DoCommonUI( GameUIStuff &gameUI )
 {
     if (IsKeyPressed( KEY_TAB )) {
@@ -369,8 +458,11 @@ void GameUI_DoCommonUI( GameUIStuff &gameUI )
         }
     }
 
-     //DrawText( "Hello There", 200, 80, 20, RED);
+    
     if (gameUI.mode==MODE_PLAY) {
+        
+        // TODO: This should be game-specific play mode, not
+        // handled here
         
         GameUI_DrawGameMode( gameUI );
 
@@ -482,6 +574,12 @@ void GameUI_DoCommonUI( GameUIStuff &gameUI )
 //                    }
 //                }
         }
+        
+    } else if (gameUI.mode==MODE_STEP) {
+        
+        // STEP is like PLAY mode but only game-agnostic stuff.
+        GameUI_DrawStepMode( gameUI );
+        
     } else if ( gameUI.mode==MODE_GALLERY) {
 
         
@@ -493,4 +591,7 @@ void GameUI_DoCommonUI( GameUIStuff &gameUI )
         
         GameUI_DrawTree( gameUI );
     }
+    
+    
+    GameUI_ShowModeName( gameUI );
 }

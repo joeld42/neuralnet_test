@@ -95,14 +95,7 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 	//DrawRectangleLines( outer_rect.x, outer_rect.y, outer_rect.width, outer_rect.height, RED );
 
 	// Inner Rect
-	float sz = min_float( outer_rect.width, outer_rect.height );
-	float hmarg = (outer_rect.width - sz) / 2.0;
-	float vmarg = (outer_rect.height - sz ) /2.0;
-	Rectangle rect = {};
-	rect.x = outer_rect.x + hmarg;
-	rect.y = outer_rect.y + vmarg;
-	rect.width = sz;
-	rect.height = sz;
+    Rectangle rect = FitSquareInRect( outer_rect );
 
 	Color win_c = GetWinColor( state.gameResult, state.winner, ga.plr[0].win_chance, ga.plr[1].win_chance, ga.tie_chance );
 	//Color win_c = { (uint8_t)(x_win_chance*255), 255, (uint8_t)(o_win_chance*255), 255 };	
