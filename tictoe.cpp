@@ -859,7 +859,7 @@ void TrainOneStep( GameAppInfo &app, float temperature )
 		int aiMove = -1;
 		//if ((app.currMove==0)||(UniformRandom() > temperature)) {
 
-		// choose hte first five moves at random, then use the MCTS
+		// choose the first five moves at random, then use the MCTS
 		if (app.currMove < 5) {
 			//aiMove = ChooseBestMove( app, app.gameHistory[app.currMove] );
 			aiMove = TreeSearchMove( app, app.gameHistory[app.currMove] );

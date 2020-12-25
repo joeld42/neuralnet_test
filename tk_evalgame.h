@@ -115,7 +115,7 @@ void FreeArray( GameStateArray *games );
 void ClearArray( GameStateArray *games );
 
 
-#define NUM_MCTS_NODE (10000)
+#define NUM_MCTS_NODE (20000)
 
 struct MCTSNode
 {

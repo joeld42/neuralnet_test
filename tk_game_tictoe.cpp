@@ -97,8 +97,8 @@ void DrawBoard( Rectangle outer_rect, GameState state,
 	// Inner Rect
     Rectangle rect = FitSquareInRect( outer_rect );
 
-	Color win_c = GetWinColor( state.gameResult, state.winner, ga.plr[0].win_chance, ga.plr[1].win_chance, ga.tie_chance );
-	//Color win_c = { (uint8_t)(x_win_chance*255), 255, (uint8_t)(o_win_chance*255), 255 };	
+	//Color win_c = GetWinColor( state.gameResult, state.winner, ga.plr[0].win_chance, ga.plr[1].win_chance, ga.tie_chance );
+    Color win_c = GetWinColor2( state.gameResult, state.winner, ga );	
 
 	DrawRectangle( rect.x, rect.y, rect.width, rect.height, win_c );
 

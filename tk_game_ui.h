@@ -29,7 +29,8 @@ Color LerpColor( Color a, Color b, float t);
 Rectangle FitSquareInRect( Rectangle outer_rect );
 
 // Game display stuff
-Color GetWinColor( int result, int winner, float x_win_chance, float o_win_chance, float tie_chance );
+Color GetWinColorOLD( int result, int winner, float x_win_chance, float o_win_chance, float tie_chance );
+Color GetWinColor2(  int result, int winner, GameAnalysis analysis );
 
 // Debug MCTS tree
 struct DbgTreeRect
@@ -55,8 +56,12 @@ struct GameUIStuff
     int numPotentialMoves;
     PotentialMove potentialMoves[MAX_UI_MOVES];
     
+    // Which potential move is highlighted
+    int cursorMoveNdx;
+    
     // TODO: Move mode out here
     int autoTrain;
+    int isTraining;
     float temperature;
 };
 

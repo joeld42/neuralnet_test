@@ -9,6 +9,14 @@
 #include "tk_game_ui.h"
 #include "tk_evalgame.h"
 
+Color g_playerCols[] = {
+    (Color){  56, 100, 38, 255 }, // Dark Green
+    (Color){  122, 44, 39, 255 }, // Dark Red
+    (Color){  38, 50, 116, 255 }, // Dark Blue
+    (Color){  192, 155, 59, 255 }, // Yellow
+    (Color){  105, 40, 111, 255 }, // Purple
+};
+
 static const char *_mode_name[NUM_MODES] =
 {
     "Play", "Step", "Gallery", "Tree"
@@ -58,7 +66,7 @@ Rectangle FitSquareInRect( Rectangle outer_rect )
 }
 
 // FIXME: Change to take a GameAnalysis
-Color GetWinColor( int result, int winner, float x_win_chance, float o_win_chance, float tie_chance )
+Color GetWinColorOLD( int result, int winner, float x_win_chance, float o_win_chance, float tie_chance )
 {
     Color win_c = WHITE;
     Color winCol_O = (Color){ 200,200,255,255 };
@@ -74,7 +82,6 @@ Color GetWinColor( int result, int winner, float x_win_chance, float o_win_chanc
         }
     } else {
         // no winner yet, color by chance of winner
-
         if ((x_win_chance > o_win_chance) && (x_win_chance > tie_chance)) {
             return LerpColor( WHITE, winCol_X, x_win_chance );
         } else if ((o_win_chance > x_win_chance) && (o_win_chance > tie_chance)) {
@@ -84,6 +91,38 @@ Color GetWinColor( int result, int winner, float x_win_chance, float o_win_chanc
             return LerpColor( WHITE, tieCol, tie_chance );
         }
     }
+    return win_c;
+}
+
+Color GetWinColor2(  int result, int winner, GameAnalysis analysis )
+{
+    Color win_c = WHITE;
+    Color tie_c = GRAY;
+    
+    // If there's a winner, use the winner color
+    if (result == RESULT_WINNER) {
+        win_c = g_playerCols[ winner ];
+    } else {
+        // TODO: unhardcode num players
+        int NUM_PLAYERS = 2;
+        int bestPlayer = 0;
+        int secondBest = 1;
+        for (int i=1; i < NUM_PLAYERS; i++) {
+            if (analysis.plr[ i ].win_chance > analysis.plr[ bestPlayer ].win_chance) {
+                secondBest = bestPlayer;
+                bestPlayer = i;
+            }
+        }
+        
+        if (analysis.plr[ bestPlayer ].win_chance < analysis.tie_chance) {
+            // Tie is most likely, use the tie color
+            win_c = LerpColor( WHITE, tie_c, analysis.tie_chance );
+        } else {
+            // Use the strongest player's win color
+            win_c = LerpColor( WHITE, g_playerCols[ bestPlayer ], analysis.plr[ bestPlayer ].win_chance );
+        }
+    }
+    
     return win_c;
 }
 
@@ -168,6 +207,9 @@ void GameUI_GatherPotentialMoves( GameUIStuff &gameUI )
     GameState currMove = GameUI_CurrMove( gameUI );
     TreeSearchMove( gameUI.app, currMove );
     
+    // Reset cursor
+    gameUI.cursorMoveNdx = 0;
+    
     // Copy potential moves in
     gameUI.numPotentialMoves = 0;
     MCTSNode &root = gameUI.app.nodes[0];
@@ -201,6 +243,7 @@ void GameUI_AutoTrain( GameUIStuff &gameUI, int count )
 {
     if (gameUI.autoTrain) {
         gameUI.autoTrain = 0;
+        gameUI.isTraining = 1;
         printf("Autotrain off\n");
     } else {
         gameUI.autoTrain = count;
@@ -329,7 +372,11 @@ void GameUI_DrawGameMode( GameUIStuff &gameUI )
     
     prompty += 20;
     char buff[20];
-    sprintf( buff, "%d trains (%d games)", gameUI.app.trainCount, gameUI.app.gameCount );
+    if (gameUI.autoTrain) {
+        sprintf( buff, "Training batch sz %d (%d, %d)", gameUI.autoTrain, gameUI.app.trainCount, gameUI.app.gameCount );
+    } else {
+        sprintf( buff, "%d trains (%d games)", gameUI.app.trainCount, gameUI.app.gameCount );
+    }
     DrawText( buff, promptx, prompty, 20, ORANGE );
 
     prompty += 22;
@@ -366,8 +413,26 @@ void GameUI_DrawGameMode( GameUIStuff &gameUI )
     for (int i=0; i < gameUI.numPotentialMoves; i++) {
         PotentialMove &move = gameUI.potentialMoves[i];
         
+        if (i==gameUI.cursorMoveNdx) {
+            Rectangle cursorRect = {};
+            cursorRect.x = moveRect.x -1;
+            cursorRect.y = moveRect.y -1;
+            cursorRect.width = moveRect.width+2;
+            cursorRect.height = moveRect.width+2;
+            
+            Color lightBlue = (Color){ 10, 100, 255, 255 };
+            DrawRectangleLinesEx( cursorRect, 2, lightBlue );
+        }
+        
         DrawBoard( moveRect, move.move, move.analysis, NULL, false );
         DrawText( TextFormat( "%3.2f", move.value), moveRect.x + 2, moveRect.y-12, 12, BLACK );
+                
+        for (int j=0; j < 2; j++) {
+            DrawText( TextFormat( "%3.2f", move.analysis.plr[j].win_chance), moveRect.x + 2, moveRect.y-(12*(j+2)), 12, g_playerCols[j] );
+        }
+        
+        DrawText( TextFormat( "%3.2f", move.analysis.tie_chance), moveRect.x + 2, moveRect.y-(12*4), 12, GRAY );
+        
         moveRect.x += moveRect.width + 10;
         
         if (moveRect.x > 500) {
@@ -463,13 +528,41 @@ void GameUI_DoCommonUI( GameUIStuff &gameUI )
         
         // TODO: This should be game-specific play mode, not
         // handled here
-        
         GameUI_DrawGameMode( gameUI );
 
         if (IsKeyPressed(KEY_R)) {
             
             GameUI_ResetGame( gameUI );
 
+        }
+        
+        if (IsKeyPressed(KEY_RIGHT)) {
+            gameUI.cursorMoveNdx++;
+            if (gameUI.cursorMoveNdx >= gameUI.numPotentialMoves) {
+                gameUI.cursorMoveNdx = 0;
+            }
+        }
+        
+        if (IsKeyPressed(KEY_LEFT)) {
+        
+            if (gameUI.cursorMoveNdx==0) {
+                if (gameUI.numPotentialMoves>0)
+                    gameUI.cursorMoveNdx = gameUI.numPotentialMoves-1;
+            } else {
+                gameUI.cursorMoveNdx--;
+            }
+        }
+        if (IsKeyPressed(KEY_ENTER)) {
+            if (gameUI.numPotentialMoves > 0)
+            {
+                int nextMove = gameUI.app.currMove+1;
+                gameUI.app.gameHistory[nextMove] = gameUI.potentialMoves[gameUI.cursorMoveNdx].move;
+                gameUI.app.currMove = nextMove;
+                printf( "Applyed move %d\n", gameUI.cursorMoveNdx );
+                
+                GameUI_GatherPotentialMoves( gameUI );
+                printf("Got %d potential moves.\n", gameUI.numPotentialMoves );
+            }
         }
 
         if (IsKeyPressed(KEY_S)) {
@@ -529,8 +622,9 @@ void GameUI_DoCommonUI( GameUIStuff &gameUI )
 //                }
         }
 
-        if (gameUI.autoTrain)
+        if ((gameUI.autoTrain) && (gameUI.isTraining))
         {
+            // auto train one batch
             for (int s=0; s < gameUI.autoTrain; s++)
             {
                 TrainOneStep( gameUI.app, gameUI.temperature );
@@ -539,13 +633,23 @@ void GameUI_DoCommonUI( GameUIStuff &gameUI )
                 }
             }
 
-            // Don't train continously for
-            if (gameUI.autoTrain > 999) {
+            printf("--- Training batch %d completed.--- \n", gameUI.autoTrain );
+            
+            // Don't train continously for big steps
+            if (gameUI.autoTrain > 99) {
                 gameUI.autoTrain = 0;
+                gameUI.isTraining = 0;
                 printf("phew\n");
             }
 
         } else {
+            
+            // This lets us update one frame before autotraining so
+            // we can see the message before pausing for the training
+            if (gameUI.autoTrain) {
+                gameUI.isTraining = 1;
+            }
+            
             // Manual play mode
 
             // If the game is not over, allow moves
