@@ -447,6 +447,63 @@ void TrainOneStep( GameAppInfo &app, float temperature )
 	}
 }
 
+void SaveTrainingData( GameAppInfo &app, char *filename )
+{
+    FILE *fp = fopen( filename, "wt" );
+    if (!fp) {
+        printf("ERROR: save failed, could not open file\n" );
+        return;
+    }
+    
+    // Write some extra data on top of the genann training set
+    fprintf(fp, "%d %d\n", app.trainCount, app.gameCount );
+    
+    genann_write( app.net, fp );
+    fclose(fp);
+    
+    printf("Saved training data %s\n", filename );
+}
+
+void LoadTrainingData( GameAppInfo &app, char *filename )
+{
+    FILE *fp = fopen( filename, "rt" );
+    if (!fp) {
+        printf("Could not load training data\n" );
+        return;
+    }
+    
+    if (app.net) {
+        genann_free( app.net );
+        app.net = NULL;
+    }
+    
+    // read our extra data
+    fscanf(fp, "%d %d\n", &(app.trainCount), &(app.gameCount) );
+    
+    app.net = genann_read( fp );
+    fclose(fp);
+    
+    printf("Loaded training data %s\n", filename );
+    
+    
+    
+//    app.net = genann_init( app.info.net_inputs,
+//                          app.info.net_hidden_layers,
+//                          app.info.net_hidden_layer_size,
+//                          3 ); // 3 outs: win chance, lose chance, tie chance
+    
+    //int inputs, hidden_layers, hidden, outputs;
+    if ( (app.net->inputs != app.info.net_inputs) ||
+         (app.net->hidden_layers != app.info.net_hidden_layers) ||
+         (app.net->hidden != app.info.net_hidden_layer_size) ||
+        (app.net->outputs != 3) ) {
+        printf("LOAD Error: loaded net sizes do not match expected sizes, not using it.\n");
+        genann_free( app.net );
+        app.net = NULL;
+    }
+}
+
+
 void ResetGame( GameAppInfo &app )
 {
 	app.currMove = 0;

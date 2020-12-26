@@ -371,7 +371,7 @@ void GameUI_DrawGameMode( GameUIStuff &gameUI )
     }
     
     prompty += 20;
-    char buff[20];
+    char buff[1000]; // bug was causing winCount to appear very large, which was overflowing this.
     if (gameUI.autoTrain) {
         sprintf( buff, "Training batch sz %d (%d, %d)", gameUI.autoTrain, gameUI.app.trainCount, gameUI.app.gameCount );
     } else {
@@ -571,6 +571,18 @@ void GameUI_DoCommonUI( GameUIStuff &gameUI )
             GameUI_GatherPotentialMoves( gameUI );
         }
         
+        if (IsKeyPressed( KEY_I ))
+        {
+            LoadTrainingData( gameUI.app, (char *)"tk_game_tictoe.dat");
+            if (gameUI.app.net == NULL) {
+                GameInit( gameUI.app ); // reinitialize game if the load fails
+            }
+        }
+        else if (IsKeyPressed( KEY_O))
+        {
+            SaveTrainingData( gameUI.app, (char *)"tk_game_tictoe.dat" );
+        }
+        
         if (IsKeyPressed(KEY_A)) {
             // Analyze moves
             GameUI_GatherPotentialMoves( gameUI );
@@ -590,7 +602,7 @@ void GameUI_DoCommonUI( GameUIStuff &gameUI )
             GameUI_AutoTrain( gameUI, 1 );
         }
         if (IsKeyPressed(KEY_N)) {
-            GameUI_AutoTrain( gameUI, 500 );
+            GameUI_AutoTrain( gameUI, 100 );
         }
         if (IsKeyPressed(KEY_B)) {
             GameUI_AutoTrain( gameUI, 1000 );
@@ -636,7 +648,7 @@ void GameUI_DoCommonUI( GameUIStuff &gameUI )
             printf("--- Training batch %d completed.--- \n", gameUI.autoTrain );
             
             // Don't train continously for big steps
-            if (gameUI.autoTrain > 99) {
+            if (gameUI.autoTrain > 499) {
                 gameUI.autoTrain = 0;
                 gameUI.isTraining = 0;
                 printf("phew\n");

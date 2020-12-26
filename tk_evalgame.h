@@ -177,6 +177,8 @@ int Rollout( GameAppInfo &app, GameState state, int runs, int player );
 GameState TreeSearchMove( GameAppInfo &app, const GameState &game );
 void TrainHistory( GameAppInfo &app );
 void TrainOneStep( GameAppInfo &app, float temperature );
+void SaveTrainingData( GameAppInfo &app, char *filename );
+void LoadTrainingData( GameAppInfo &app, char *filename );
 void ResetGame( GameAppInfo &app );
 
 float UniformRandom();

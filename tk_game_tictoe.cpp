@@ -98,7 +98,7 @@ void DrawBoard( Rectangle outer_rect, GameState state,
     Rectangle rect = FitSquareInRect( outer_rect );
 
 	//Color win_c = GetWinColor( state.gameResult, state.winner, ga.plr[0].win_chance, ga.plr[1].win_chance, ga.tie_chance );
-    Color win_c = GetWinColor2( state.gameResult, state.winner, ga );	
+    Color win_c = GetWinColor2( state.gameResult, state.winner, ga );
 
 	DrawRectangle( rect.x, rect.y, rect.width, rect.height, win_c );
 
@@ -285,7 +285,8 @@ int main()
 
     GameInit( gameUI.app );
         
-    //ResetGallery( app );
+    // Load initial training data
+    LoadTrainingData( gameUI.app, (char *)"tk_game_tictoe.dat");
 
     // Main game loop
     while (!exitWindow)    // Detect window close button or ESC key
